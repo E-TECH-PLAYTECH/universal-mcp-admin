@@ -1134,15 +1134,18 @@ LANGUAGE_HANDLERS: Dict[str, Dict[str, Any]] = {
 def inject_tool_generic(
     server_name: str,
     tool_name: str,
-    tool_code: str
+    tool_code: str,
+    auto_import: bool = False,
 ) -> Tuple[bool, str]:
     """
     Generic tool injection that routes to language-specific handlers.
+    Optionally auto-injects missing imports.
     
     Args:
         server_name: Name of the server to modify
         tool_name: Name of the tool to inject
         tool_code: Code for the tool
+        auto_import: If True, automatically inject missing imports
         
     Returns:
         Tuple of (success, message)
@@ -1154,7 +1157,268 @@ def inject_tool_generic(
         if extension not in LANGUAGE_HANDLERS:
             return False, f"Unsupported language: {extension}. Supported: {', '.join(LANGUAGE_HANDLERS.keys())}"
         
+        # Auto-import handling
+        import_message = ""
+        if auto_import:
+            try:
+                from import_manager import check_missing_imports, inject_imports
+                source_code, _ = read_source_file(server_name, max_chars=200000)
+                missing = check_missing_imports(source_code, tool_code, extension)
+                if missing:
+                    new_source = inject_imports(source_code, missing, extension)
+                    with open(source_path, 'w', encoding='utf-8') as f:
+                        f.write(new_source)
+                    import_message = f" Auto-injected imports: {', '.join(missing)}."
+            except Exception as e:
+                import_message = f" Import auto-injection failed: {e}."
+        
         handler = LANGUAGE_HANDLERS[extension]
-        return handler['inject'](server_name, tool_name, tool_code)
+        success, message = handler['inject'](server_name, tool_name, tool_code)
+        
+        # Register backup with BackupManager
+        if success:
+            try:
+                from backup_manager import get_backup_manager
+                bm = get_backup_manager()
+                backup_path = source_path.with_suffix(source_path.suffix + ".bak")
+                if backup_path.exists():
+                    bm.register_backup(
+                        file_path=str(source_path),
+                        backup_path=str(backup_path),
+                        operation="inject_tool",
+                        server_name=server_name,
+                        tool_name=tool_name,
+                    )
+            except Exception:
+                pass
+        
+        return success, message + import_message
     except Exception as e:
         return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Tool Removal and Modification
+# ============================================================================
+
+def find_tool_in_source(
+    source_code: str, tool_name: str, language: str
+) -> Optional[Tuple[int, int, str]]:
+    """
+    Locate a tool definition in source code.
+    Returns (start_line, end_line, full_definition) or None if not found.
+    Lines are 0-indexed.
+    """
+    lines = source_code.splitlines()
+
+    if language == '.py':
+        return _find_python_tool(lines, tool_name)
+    elif language in ('.js', '.ts'):
+        return _find_js_tool(lines, tool_name)
+    elif language == '.rs':
+        return _find_brace_tool(lines, tool_name, r'(?:pub\s+)?(?:async\s+)?fn\s+' + re.escape(tool_name) + r'\s*\(')
+    elif language in ('.c', '.cpp', '.cc', '.cxx'):
+        return _find_brace_tool(lines, tool_name, r'(?:\w+\s+)+' + re.escape(tool_name) + r'\s*\(')
+    elif language == '.go':
+        return _find_brace_tool(lines, tool_name, r'func\s+(?:\([^)]*\)\s+)?' + re.escape(tool_name) + r'\s*\(')
+    return None
+
+
+def _find_python_tool(lines: list, tool_name: str) -> Optional[Tuple[int, int, str]]:
+    """Find a Python function definition, including decorators."""
+    func_pattern = re.compile(rf'def\s+{re.escape(tool_name)}\s*\(')
+    for i, line in enumerate(lines):
+        if func_pattern.search(line):
+            # Walk backwards for decorators
+            start = i
+            while start > 0 and lines[start - 1].strip().startswith('@'):
+                start -= 1
+            # Also capture preceding comment block
+            while start > 0 and lines[start - 1].strip().startswith('#'):
+                start -= 1
+
+            # Walk forward to find the end of the function
+            indent = len(line) - len(line.lstrip())
+            end = i + 1
+            while end < len(lines):
+                l = lines[end]
+                if l.strip() == '':
+                    end += 1
+                    continue
+                current_indent = len(l) - len(l.lstrip())
+                if current_indent <= indent and l.strip():
+                    break
+                end += 1
+            # Trim trailing blank lines
+            while end > i + 1 and not lines[end - 1].strip():
+                end -= 1
+            return start, end, '\n'.join(lines[start:end])
+    return None
+
+
+def _find_js_tool(lines: list, tool_name: str) -> Optional[Tuple[int, int, str]]:
+    """Find a JavaScript/TypeScript function or tool definition."""
+    patterns = [
+        re.compile(rf'(?:export\s+)?(?:async\s+)?function\s+{re.escape(tool_name)}\s*\('),
+        re.compile(rf'(?:const|let|var)\s+{re.escape(tool_name)}\s*='),
+    ]
+    for pat in patterns:
+        for i, line in enumerate(lines):
+            if pat.search(line):
+                start = i
+                # Check for preceding comments
+                while start > 0 and (lines[start - 1].strip().startswith('//') or lines[start - 1].strip().startswith('/*')):
+                    start -= 1
+                # Find matching brace end
+                end = _find_brace_end(lines, i)
+                return start, end, '\n'.join(lines[start:end])
+    return None
+
+
+def _find_brace_tool(lines: list, tool_name: str, pattern_str: str) -> Optional[Tuple[int, int, str]]:
+    """Find a brace-delimited function definition (Rust, C, C++, Go)."""
+    pat = re.compile(pattern_str)
+    for i, line in enumerate(lines):
+        if pat.search(line):
+            start = i
+            # Check for preceding comments/attributes
+            while start > 0:
+                prev = lines[start - 1].strip()
+                if prev.startswith('//') or prev.startswith('#[') or prev.startswith('/*') or prev.startswith('///'):
+                    start -= 1
+                else:
+                    break
+            end = _find_brace_end(lines, i)
+            return start, end, '\n'.join(lines[start:end])
+    return None
+
+
+def _find_brace_end(lines: list, start_line: int) -> int:
+    """Find the end of a brace-delimited block starting from start_line."""
+    depth = 0
+    found_open = False
+    for i in range(start_line, len(lines)):
+        for ch in lines[i]:
+            if ch == '{':
+                depth += 1
+                found_open = True
+            elif ch == '}':
+                depth -= 1
+                if found_open and depth == 0:
+                    return i + 1
+    return len(lines)
+
+
+def remove_tool_from_source(
+    source_code: str, tool_name: str, language: str
+) -> Tuple[bool, str, str]:
+    """
+    Remove a tool definition from source code.
+    Returns (success, message, modified_source).
+    """
+    result = find_tool_in_source(source_code, tool_name, language)
+    if result is None:
+        return False, f"Tool '{tool_name}' not found in source", source_code
+
+    start, end, _ = result
+    lines = source_code.splitlines()
+    new_lines = lines[:start] + lines[end:]
+
+    # Clean up extra blank lines
+    modified = '\n'.join(new_lines)
+    while '\n\n\n\n' in modified:
+        modified = modified.replace('\n\n\n\n', '\n\n\n')
+
+    # Validate
+    if language == '.py':
+        is_valid, err = validate_python_code(modified)
+        if not is_valid:
+            return False, f"Removing tool would break syntax: {err}", source_code
+
+    return True, f"Tool '{tool_name}' removed (lines {start+1}-{end})", modified
+
+
+def replace_tool_in_source(
+    source_code: str, tool_name: str, new_code: str, language: str
+) -> Tuple[bool, str, str]:
+    """
+    Replace a tool definition with new code.
+    Returns (success, message, modified_source).
+    """
+    result = find_tool_in_source(source_code, tool_name, language)
+    if result is None:
+        return False, f"Tool '{tool_name}' not found in source", source_code
+
+    start, end, _ = result
+    lines = source_code.splitlines()
+    new_lines = lines[:start] + new_code.splitlines() + lines[end:]
+    modified = '\n'.join(new_lines)
+
+    # Validate
+    if language == '.py':
+        is_valid, err = validate_python_code(modified)
+        if not is_valid:
+            return False, f"Replacement would break syntax: {err}", source_code
+
+    return True, f"Tool '{tool_name}' replaced (lines {start+1}-{end})", modified
+
+
+def remove_tool(server_name: str, tool_name: str) -> Tuple[bool, str]:
+    """Remove a tool from a server's source file."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=200000)
+        extension = source_path.suffix
+        backup_path = create_backup(source_path)
+
+        success, message, modified = remove_tool_from_source(
+            source_code, tool_name, extension
+        )
+        if not success:
+            return False, message
+
+        with open(source_path, 'w', encoding='utf-8') as f:
+            f.write(modified)
+
+        # Register backup
+        try:
+            from backup_manager import get_backup_manager
+            get_backup_manager().register_backup(
+                str(source_path), str(backup_path),
+                "remove_tool", server_name, tool_name,
+            )
+        except Exception:
+            pass
+
+        return True, f"{message}. Backup at {backup_path}"
+    except Exception as e:
+        return False, f"Failed to remove tool: {e}"
+
+
+def replace_tool(server_name: str, tool_name: str, new_code: str) -> Tuple[bool, str]:
+    """Replace a tool in a server's source file."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=200000)
+        extension = source_path.suffix
+        backup_path = create_backup(source_path)
+
+        success, message, modified = replace_tool_in_source(
+            source_code, tool_name, new_code, extension
+        )
+        if not success:
+            return False, message
+
+        with open(source_path, 'w', encoding='utf-8') as f:
+            f.write(modified)
+
+        try:
+            from backup_manager import get_backup_manager
+            get_backup_manager().register_backup(
+                str(source_path), str(backup_path),
+                "replace_tool", server_name, tool_name,
+            )
+        except Exception:
+            pass
+
+        return True, f"{message}. Backup at {backup_path}"
+    except Exception as e:
+        return False, f"Failed to replace tool: {e}"

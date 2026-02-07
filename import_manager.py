@@ -1,0 +1,215 @@
+"""
+import_manager.py - Import detection, checking, and injection for multiple languages
+"""
+
+import ast
+import json
+import os
+import re
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+
+# ============================================================================
+# Import extraction per language
+# ============================================================================
+
+def extract_imports_python(code: str) -> List[str]:
+    """Extract import statements from Python code."""
+    imports: List[str] = []
+    try:
+        tree = ast.parse(code)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.append(f"import {alias.name}")
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                names = ", ".join(a.name for a in node.names)
+                imports.append(f"from {module} import {names}")
+    except SyntaxError:
+        # Fallback: regex
+        for m in re.finditer(r'^(import .+|from .+ import .+)', code, re.MULTILINE):
+            imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_javascript(code: str) -> List[str]:
+    """Extract import/require statements from JavaScript/TypeScript."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(import\s+.+|const\s+\w+\s*=\s*require\(.+\));?\s*$', code, re.MULTILINE):
+        imports.append(m.group(0).strip().rstrip(';'))
+    return imports
+
+
+def extract_imports_rust(code: str) -> List[str]:
+    imports: List[str] = []
+    for m in re.finditer(r'^(use\s+.+);', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_go(code: str) -> List[str]:
+    imports: List[str] = []
+    # single-line: import "fmt"
+    for m in re.finditer(r'^import\s+"([^"]+)"', code, re.MULTILINE):
+        imports.append(f'import "{m.group(1)}"')
+    # block: import ( ... )
+    for m in re.finditer(r'import\s*\((.*?)\)', code, re.DOTALL):
+        for line in m.group(1).strip().splitlines():
+            pkg = line.strip().strip('"')
+            if pkg:
+                imports.append(f'import "{pkg}"')
+    return imports
+
+
+def extract_imports_c(code: str) -> List[str]:
+    imports: List[str] = []
+    for m in re.finditer(r'^(#include\s+[<"].+[>"])', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+_EXTRACTORS = {
+    '.py': extract_imports_python,
+    '.js': extract_imports_javascript,
+    '.ts': extract_imports_javascript,
+    '.rs': extract_imports_rust,
+    '.go': extract_imports_go,
+    '.c': extract_imports_c,
+    '.cpp': extract_imports_c,
+    '.cc': extract_imports_c,
+    '.cxx': extract_imports_c,
+}
+
+
+def extract_imports(code: str, language: str) -> List[str]:
+    """Extract imports from code for the given language extension (e.g. '.py')."""
+    extractor = _EXTRACTORS.get(language)
+    if extractor:
+        return extractor(code)
+    return []
+
+
+# ============================================================================
+# Missing import detection
+# ============================================================================
+
+def check_missing_imports(
+    source_code: str, tool_code: str, language: str
+) -> List[str]:
+    """Return imports in tool_code that are not present in source_code."""
+    source_imports = set(extract_imports(source_code, language))
+    tool_imports = extract_imports(tool_code, language)
+    missing = [imp for imp in tool_imports if imp not in source_imports]
+    return missing
+
+
+# ============================================================================
+# Import injection
+# ============================================================================
+
+def _find_import_insert_position_python(source_code: str) -> int:
+    """Find the line index after the last import in Python source."""
+    lines = source_code.splitlines(keepends=True)
+    last_import_idx = -1
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("import ") or stripped.startswith("from "):
+            last_import_idx = i
+    return last_import_idx + 1 if last_import_idx >= 0 else 0
+
+
+def _find_import_insert_position_c(source_code: str) -> int:
+    lines = source_code.splitlines(keepends=True)
+    last_include = -1
+    for i, line in enumerate(lines):
+        if line.strip().startswith("#include"):
+            last_include = i
+    return last_include + 1 if last_include >= 0 else 0
+
+
+def inject_imports(
+    source_code: str, imports: List[str], language: str
+) -> str:
+    """Inject import statements into source code at the correct position."""
+    if not imports:
+        return source_code
+
+    lines = source_code.splitlines(keepends=True)
+
+    if language in ('.py',):
+        pos = _find_import_insert_position_python(source_code)
+    elif language in ('.c', '.cpp', '.cc', '.cxx'):
+        pos = _find_import_insert_position_c(source_code)
+    elif language in ('.js', '.ts'):
+        # Insert after last import/require
+        pos = 0
+        for i, line in enumerate(lines):
+            if re.match(r'^\s*(import\s|const\s+\w+\s*=\s*require)', line):
+                pos = i + 1
+    elif language == '.rs':
+        pos = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith("use "):
+                pos = i + 1
+    elif language == '.go':
+        pos = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith("import"):
+                pos = i + 1
+    else:
+        pos = 0
+
+    import_block = "\n".join(imports) + "\n"
+    lines.insert(pos, import_block)
+    return "".join(lines)
+
+
+# ============================================================================
+# Dependency detection
+# ============================================================================
+
+def detect_dependencies(project_path: str, language: str) -> List[Dict[str, str]]:
+    """Detect external dependencies from project manifests."""
+    pp = Path(project_path)
+    deps: List[Dict[str, str]] = []
+
+    if language == '.py':
+        req = pp / "requirements.txt"
+        if req.exists():
+            for line in req.read_text(encoding='utf-8').splitlines():
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    deps.append({"name": line, "source": "requirements.txt"})
+        pyproject = pp / "pyproject.toml"
+        if pyproject.exists():
+            deps.append({"name": "(see pyproject.toml)", "source": "pyproject.toml"})
+
+    elif language in ('.js', '.ts'):
+        pkg = pp / "package.json"
+        if pkg.exists():
+            try:
+                data = json.loads(pkg.read_text(encoding='utf-8'))
+                for name, ver in data.get("dependencies", {}).items():
+                    deps.append({"name": f"{name}@{ver}", "source": "package.json"})
+                for name, ver in data.get("devDependencies", {}).items():
+                    deps.append({"name": f"{name}@{ver}", "source": "package.json (dev)"})
+            except Exception:
+                pass
+
+    elif language == '.rs':
+        cargo = pp / "Cargo.toml"
+        if cargo.exists():
+            deps.append({"name": "(see Cargo.toml)", "source": "Cargo.toml"})
+
+    elif language == '.go':
+        gomod = pp / "go.mod"
+        if gomod.exists():
+            for line in gomod.read_text(encoding='utf-8').splitlines():
+                line = line.strip()
+                if line and not line.startswith("module") and not line.startswith("go ") and not line.startswith("//"):
+                    if not line.startswith(("require", ")", "(")):
+                        deps.append({"name": line.split()[0] if line.split() else line, "source": "go.mod"})
+
+    return deps
