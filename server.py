@@ -90,38 +90,41 @@ def inspect_mcp_source(server_name: str) -> Dict[str, str]:
 def inject_tool_capability(
     server_name: str, 
     tool_name: str, 
-    python_code: str
+    code: str
 ) -> Dict[str, Any]:
     """
-    HOT-PATCHING: Inject a new tool capability into a Python MCP server.
+    HOT-PATCHING: Inject a new tool capability into a Python or JavaScript MCP server.
     
-    This tool:
-    1. Reads the target server's Python file
-    2. Checks if tool_name already exists
-    3. Validates the Python code syntax using AST
-    4. Creates a .bak backup copy
-    5. Appends the new @mcp.tool() function code to the end of the file
+    This tool automatically detects the server's language and routes to the appropriate
+    injection function. It:
+    1. Detects the file type (.py or .js)
+    2. Reads the target server's source file
+    3. Checks if tool_name already exists
+    4. Validates the code syntax (AST for Python, Node.js for JavaScript)
+    5. Creates a .bak backup copy
+    6. Appends the new tool code to the end of the file
     
     This allows the AI to write new abilities for itself or its peers.
     
     Args:
         server_name: Name of the server to modify (from config list)
         tool_name: Name of the tool to inject
-        python_code: Python code for the tool (should include @mcp.tool() decorator)
+        code: Code for the tool (Python or JavaScript, depending on server type)
+            - Python: Should include @mcp.tool() decorator
+            - JavaScript: Should include proper tool definition
         
     Returns:
         Dictionary containing:
         - success: Whether the operation succeeded
         - message: Success or error message
-        - backup_path: Path to backup file (if created)
         
     Safety:
         - Creates backup before modification
-        - Validates syntax with ast.parse()
+        - Validates syntax (AST for Python, Node.js for JavaScript)
         - Checks if tool already exists
         - Respects ALLOWED_ROOT_DIR restriction
         
-    Example:
+    Example (Python):
         inject_tool_capability(
             "luthier-physics",
             "calculate_volume",
@@ -129,11 +132,37 @@ def inject_tool_capability(
             "def calculate_volume(length: float, width: float, height: float) -> float:\\n" +
             "    return length * width * height"
         )
+    
+    Example (JavaScript):
+        inject_tool_capability(
+            "my-js-server",
+            "calculate_area",
+            "server.addTool({\\n" +
+            "  name: 'calculate_area',\\n" +
+            "  handler: async (width, height) => width * height\\n" +
+            "});"
+        )
     """
     try:
-        success, message = mcp_manager.inject_tool_into_python_file(
-            server_name, tool_name, python_code
-        )
+        # Detect file type
+        source_path = mcp_manager.find_server_source_file(server_name)
+        
+        if source_path.suffix == '.js':
+            # JavaScript server
+            success, message = mcp_manager.inject_tool_into_javascript_file(
+                server_name, tool_name, code
+            )
+        elif source_path.suffix == '.py':
+            # Python server
+            success, message = mcp_manager.inject_tool_into_python_file(
+                server_name, tool_name, code
+            )
+        else:
+            return {
+                "success": False,
+                "message": f"Unsupported file type: {source_path.suffix}. Only .py and .js files are supported."
+            }
+        
         return {
             "success": success,
             "message": message

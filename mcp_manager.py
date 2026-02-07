@@ -6,6 +6,7 @@ import ast
 import os
 import re
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -309,3 +310,131 @@ def patch_file_with_regex(
         
     except Exception as e:
         return False, f"Failed to patch file: {str(e)}"
+
+
+def validate_javascript_code(code: str) -> Tuple[bool, str]:
+    """
+    Validate JavaScript code using Node.js syntax checking.
+    
+    Args:
+        code: JavaScript code to validate
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    try:
+        # Use Node.js --check flag with a temporary file
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        
+        try:
+            process = subprocess.run(
+                ["node", "--check", temp_path],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            os.unlink(temp_path)
+            
+            if process.returncode == 0:
+                return True, ""
+            else:
+                error_msg = process.stderr.strip() or process.stdout.strip()
+                return False, f"JavaScript syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "Node.js not found. Please install Node.js to validate JavaScript code."
+    except subprocess.TimeoutExpired:
+        return False, "JavaScript validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate JavaScript: {str(e)}"
+
+
+def check_tool_exists_javascript(source_code: str, tool_name: str) -> bool:
+    """
+    Check if a tool with the given name already exists in JavaScript source code.
+    
+    Args:
+        source_code: JavaScript source code to check
+        tool_name: Name of the tool to look for
+        
+    Returns:
+        True if tool exists, False otherwise
+    """
+    # Look for common patterns of tool definition in JavaScript
+    patterns = [
+        rf'\.tool\(["\']?{re.escape(tool_name)}["\']?',  # .tool("tool_name")
+        rf'name:\s*["\']{re.escape(tool_name)}["\']',  # name: "tool_name"
+        rf'function\s+{re.escape(tool_name)}\s*\(',  # function tool_name(
+        rf'const\s+{re.escape(tool_name)}\s*=',  # const tool_name =
+        rf'async\s+function\s+{re.escape(tool_name)}\s*\(',  # async function tool_name(
+    ]
+    
+    for pattern in patterns:
+        if re.search(pattern, source_code):
+            return True
+    
+    return False
+
+
+def inject_tool_into_javascript_file(
+    server_name: str, 
+    tool_name: str, 
+    tool_code: str
+) -> Tuple[bool, str]:
+    """
+    Inject a new tool capability into a JavaScript MCP server.
+    
+    This performs hot-patching by:
+    1. Reading the target server's JavaScript file
+    2. Checking if tool already exists
+    3. Validating the new tool code
+    4. Creating a backup
+    5. Appending the new tool to the file
+    
+    Args:
+        server_name: Name of the server to modify
+        tool_name: Name of the tool to inject
+        tool_code: JavaScript code for the tool
+        
+    Returns:
+        Tuple of (success, message)
+    """
+    try:
+        # Read the source file (limit to reasonable size for duplicate check)
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        
+        # Check if tool already exists
+        if check_tool_exists_javascript(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        
+        # Validate the tool code syntax
+        is_valid, error_msg = validate_javascript_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid JavaScript code: {error_msg}"
+        
+        # Also validate that adding it won't break the file
+        combined_code = source_code + "\n\n" + tool_code
+        is_valid, error_msg = validate_javascript_code(combined_code)
+        if not is_valid:
+            return False, f"Adding tool would break file syntax: {error_msg}"
+        
+        # Create backup
+        backup_path = create_backup(source_path)
+        
+        # Append the tool code
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"// Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}"
+        
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
