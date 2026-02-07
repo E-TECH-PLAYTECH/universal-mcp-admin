@@ -125,11 +125,9 @@ def inject_tool_capability(
         inject_tool_capability(
             "luthier-physics",
             "calculate_volume",
-            '''@mcp.tool()
-def calculate_volume(length: float, width: float, height: float) -> float:
-    """Calculate volume of a rectangular solid."""
-    return length * width * height
-'''
+            "@mcp.tool()\\n" +
+            "def calculate_volume(length: float, width: float, height: float) -> float:\\n" +
+            "    return length * width * height"
         )
     """
     try:
