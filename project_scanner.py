@@ -21,6 +21,21 @@ SOURCE_EXTENSIONS = {
     'zig': ['.zig'],
     'java': ['.java'],
     'ruby': ['.rb'],
+    'kotlin': ['.kt', '.kts'],
+    'swift': ['.swift'],
+    'csharp': ['.cs'],
+    'php': ['.php'],
+    'lua': ['.lua'],
+    'scala': ['.scala'],
+    'elixir': ['.ex', '.exs'],
+    'dart': ['.dart'],
+    'haskell': ['.hs'],
+    'ocaml': ['.ml', '.mli'],
+    'nim': ['.nim'],
+    'd': ['.d'],
+    'crystal': ['.cr'],
+    'raku': ['.raku', '.rakumod', '.pm6'],
+    'julia': ['.jl'],
 }
 
 ALL_EXTENSIONS = set()
@@ -63,7 +78,10 @@ def detect_project_structure(project_path: str) -> Dict[str, Any]:
                       'package.json', 'pyproject.toml', 'setup.py',
                       'meson.build', 'build.zig', 'build.zig.zon',
                       'pom.xml', 'build.gradle', 'build.gradle.kts',
-                      'Gemfile'):
+                      'Gemfile', 'Package.swift', 'composer.json',
+                      'build.sbt', 'mix.exs', 'pubspec.yaml',
+                      'stack.yaml', 'dune-project', 'dub.json', 'dub.sdl',
+                      'shard.yml', 'META6.json', 'Project.toml'):
                 structure["build_files"].append(str(fp.relative_to(pp)))
 
         # Detect modules (directories with __init__.py or index.*)
@@ -95,6 +113,34 @@ def _detect_language(project_path: Path) -> str:
         return "java"
     if (project_path / "Gemfile").exists():
         return "ruby"
+    if (project_path / "Package.swift").exists():
+        return "swift"
+    if any((project_path / f).exists() for f in ("*.csproj",)) or list(project_path.glob("*.csproj")) or list(project_path.glob("*.sln")):
+        return "csharp"
+    if (project_path / "composer.json").exists():
+        return "php"
+    if (project_path / "build.sbt").exists():
+        return "scala"
+    if (project_path / "mix.exs").exists():
+        return "elixir"
+    if (project_path / "pubspec.yaml").exists():
+        return "dart"
+    if list(project_path.glob("*.cabal")) or (project_path / "stack.yaml").exists():
+        return "haskell"
+    if (project_path / "dune-project").exists():
+        return "ocaml"
+    if list(project_path.glob("*.nimble")):
+        return "nim"
+    if (project_path / "dub.json").exists() or (project_path / "dub.sdl").exists():
+        return "d"
+    if (project_path / "shard.yml").exists():
+        return "crystal"
+    if (project_path / "META6.json").exists():
+        return "raku"
+    if (project_path / "Project.toml").exists():
+        return "julia"
+    if list(project_path.glob("*.rockspec")):
+        return "lua"
     if (project_path / "package.json").exists():
         pkg_json = project_path / "package.json"
         try:
@@ -135,6 +181,21 @@ def _detect_entry_point(project_path: Path, language: str) -> Optional[str]:
         'zig': ['src/main.zig', 'main.zig'],
         'java': ['src/main/java/Main.java', 'Main.java', 'App.java', 'src/Main.java'],
         'ruby': ['server.rb', 'main.rb', 'app.rb'],
+        'kotlin': ['src/main/kotlin/Main.kt', 'Main.kt', 'main.kts'],
+        'swift': ['Sources/main.swift', 'main.swift'],
+        'csharp': ['Program.cs', 'Main.cs', 'src/Program.cs'],
+        'php': ['index.php', 'server.php', 'main.php'],
+        'lua': ['main.lua', 'init.lua', 'server.lua'],
+        'scala': ['src/main/scala/Main.scala', 'Main.scala'],
+        'elixir': ['lib/app.ex', 'mix.exs'],
+        'dart': ['lib/main.dart', 'bin/main.dart', 'main.dart'],
+        'haskell': ['Main.hs', 'app/Main.hs'],
+        'ocaml': ['main.ml', 'bin/main.ml'],
+        'nim': ['main.nim', 'src/main.nim'],
+        'd': ['main.d', 'source/app.d'],
+        'crystal': ['src/main.cr', 'main.cr'],
+        'raku': ['main.raku', 'bin/main.raku'],
+        'julia': ['src/Main.jl', 'main.jl'],
     }
     for candidate in candidates.get(language, []):
         if (project_path / candidate).exists():

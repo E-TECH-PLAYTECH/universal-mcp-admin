@@ -94,6 +94,128 @@ def extract_imports_ruby(code: str) -> List[str]:
     return imports
 
 
+def extract_imports_kotlin(code: str) -> List[str]:
+    """Extract import statements from Kotlin code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(import\s+.+)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_swift(code: str) -> List[str]:
+    """Extract import statements from Swift code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^((?:@testable\s+)?import\s+\w+)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_csharp(code: str) -> List[str]:
+    """Extract using statements from C# code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(using\s+(?:static\s+)?.+);', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_php(code: str) -> List[str]:
+    """Extract require/use statements from PHP code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^((?:require|require_once|include|include_once)\s+.+;)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    for m in re.finditer(r'^(use\s+.+;)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_lua(code: str) -> List[str]:
+    """Extract require statements from Lua code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^((?:local\s+\w+\s*=\s*)?require\s*[\("]\s*["\']?.+["\']?\s*[\)"])', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_scala(code: str) -> List[str]:
+    """Extract import statements from Scala code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(import\s+.+)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_elixir(code: str) -> List[str]:
+    """Extract alias/require/import/use statements from Elixir code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^((?:alias|require|import|use)\s+.+)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_dart(code: str) -> List[str]:
+    """Extract import statements from Dart code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(import\s+.+;)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_haskell(code: str) -> List[str]:
+    """Extract import statements from Haskell code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(import\s+(?:qualified\s+)?\w+.+)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_ocaml(code: str) -> List[str]:
+    """Extract open/module statements from OCaml code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(open\s+\w+)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_nim(code: str) -> List[str]:
+    """Extract import/from statements from Nim code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^((?:import|from)\s+.+)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_d(code: str) -> List[str]:
+    """Extract import statements from D code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(import\s+.+;)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_crystal(code: str) -> List[str]:
+    """Extract require statements from Crystal code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(require\s+.+)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_raku(code: str) -> List[str]:
+    """Extract use/need statements from Raku code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^((?:use|need)\s+.+;)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_julia(code: str) -> List[str]:
+    """Extract using/import statements from Julia code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^((?:using|import)\s+.+)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
 _EXTRACTORS = {
     '.py': extract_imports_python,
     '.js': extract_imports_javascript,
@@ -107,6 +229,26 @@ _EXTRACTORS = {
     '.zig': extract_imports_zig,
     '.java': extract_imports_java,
     '.rb': extract_imports_ruby,
+    '.kt': extract_imports_kotlin,
+    '.kts': extract_imports_kotlin,
+    '.swift': extract_imports_swift,
+    '.cs': extract_imports_csharp,
+    '.php': extract_imports_php,
+    '.lua': extract_imports_lua,
+    '.scala': extract_imports_scala,
+    '.ex': extract_imports_elixir,
+    '.exs': extract_imports_elixir,
+    '.dart': extract_imports_dart,
+    '.hs': extract_imports_haskell,
+    '.ml': extract_imports_ocaml,
+    '.mli': extract_imports_ocaml,
+    '.nim': extract_imports_nim,
+    '.d': extract_imports_d,
+    '.cr': extract_imports_crystal,
+    '.raku': extract_imports_raku,
+    '.rakumod': extract_imports_raku,
+    '.pm6': extract_imports_raku,
+    '.jl': extract_imports_julia,
 }
 
 
@@ -205,6 +347,81 @@ def inject_imports(
             stripped = line.strip()
             if stripped.startswith("require ") or stripped.startswith("require_relative "):
                 pos = i + 1
+    elif language in ('.kt', '.kts', '.scala'):
+        pos = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith("import "):
+                pos = i + 1
+    elif language == '.swift':
+        pos = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith("import ") or line.strip().startswith("@testable import "):
+                pos = i + 1
+    elif language == '.cs':
+        pos = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith("using "):
+                pos = i + 1
+    elif language == '.php':
+        pos = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("use ") or stripped.startswith("require") or stripped.startswith("include"):
+                pos = i + 1
+    elif language == '.lua':
+        pos = 0
+        for i, line in enumerate(lines):
+            if 'require' in line:
+                pos = i + 1
+    elif language in ('.ex', '.exs'):
+        pos = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith(("alias ", "require ", "import ", "use ")):
+                pos = i + 1
+    elif language == '.dart':
+        pos = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith("import "):
+                pos = i + 1
+    elif language == '.hs':
+        pos = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith("import "):
+                pos = i + 1
+    elif language in ('.ml', '.mli'):
+        pos = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith("open "):
+                pos = i + 1
+    elif language == '.nim':
+        pos = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("import ") or stripped.startswith("from "):
+                pos = i + 1
+    elif language == '.d':
+        pos = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith("import "):
+                pos = i + 1
+    elif language == '.cr':
+        pos = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith("require "):
+                pos = i + 1
+    elif language in ('.raku', '.rakumod', '.pm6'):
+        pos = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("use ") or stripped.startswith("need "):
+                pos = i + 1
+    elif language == '.jl':
+        pos = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("using ") or stripped.startswith("import "):
+                pos = i + 1
     else:
         pos = 0
 
@@ -282,9 +499,93 @@ def detect_dependencies(project_path: str, language: str) -> List[Dict[str, str]
             for line in gemfile.read_text(encoding='utf-8').splitlines():
                 line = line.strip()
                 if line.startswith("gem "):
-                    # Extract gem name from: gem 'name' or gem "name"
                     gem_match = re.match(r'gem\s+["\']([^"\']+)["\']', line)
                     if gem_match:
                         deps.append({"name": gem_match.group(1), "source": "Gemfile"})
+
+    elif language in ('.kt', '.kts'):
+        for gradle_file in ("build.gradle.kts", "build.gradle"):
+            gradle = pp / gradle_file
+            if gradle.exists():
+                deps.append({"name": f"(see {gradle_file})", "source": gradle_file})
+
+    elif language == '.swift':
+        pkg = pp / "Package.swift"
+        if pkg.exists():
+            deps.append({"name": "(see Package.swift)", "source": "Package.swift"})
+
+    elif language == '.cs':
+        for f in pp.glob("*.csproj"):
+            deps.append({"name": f"(see {f.name})", "source": f.name})
+        for f in pp.glob("*.sln"):
+            deps.append({"name": f"(see {f.name})", "source": f.name})
+
+    elif language == '.php':
+        composer = pp / "composer.json"
+        if composer.exists():
+            try:
+                data = json.loads(composer.read_text(encoding='utf-8'))
+                for name, ver in data.get("require", {}).items():
+                    deps.append({"name": f"{name}@{ver}", "source": "composer.json"})
+            except Exception:
+                deps.append({"name": "(see composer.json)", "source": "composer.json"})
+
+    elif language == '.lua':
+        for f in pp.glob("*.rockspec"):
+            deps.append({"name": f"(see {f.name})", "source": f.name})
+
+    elif language == '.scala':
+        sbt = pp / "build.sbt"
+        if sbt.exists():
+            deps.append({"name": "(see build.sbt)", "source": "build.sbt"})
+
+    elif language in ('.ex', '.exs'):
+        mix = pp / "mix.exs"
+        if mix.exists():
+            deps.append({"name": "(see mix.exs)", "source": "mix.exs"})
+
+    elif language == '.dart':
+        pubspec = pp / "pubspec.yaml"
+        if pubspec.exists():
+            deps.append({"name": "(see pubspec.yaml)", "source": "pubspec.yaml"})
+
+    elif language == '.hs':
+        for f in pp.glob("*.cabal"):
+            deps.append({"name": f"(see {f.name})", "source": f.name})
+        stack = pp / "stack.yaml"
+        if stack.exists():
+            deps.append({"name": "(see stack.yaml)", "source": "stack.yaml"})
+
+    elif language in ('.ml', '.mli'):
+        dune = pp / "dune-project"
+        if dune.exists():
+            deps.append({"name": "(see dune-project)", "source": "dune-project"})
+        for f in pp.glob("*.opam"):
+            deps.append({"name": f"(see {f.name})", "source": f.name})
+
+    elif language == '.nim':
+        for f in pp.glob("*.nimble"):
+            deps.append({"name": f"(see {f.name})", "source": f.name})
+
+    elif language == '.d':
+        for dub_file in ("dub.json", "dub.sdl"):
+            dub = pp / dub_file
+            if dub.exists():
+                deps.append({"name": f"(see {dub_file})", "source": dub_file})
+
+    elif language == '.cr':
+        shard = pp / "shard.yml"
+        if shard.exists():
+            deps.append({"name": "(see shard.yml)", "source": "shard.yml"})
+
+    elif language in ('.raku', '.rakumod', '.pm6'):
+        meta = pp / "META6.json"
+        if meta.exists():
+            deps.append({"name": "(see META6.json)", "source": "META6.json"})
+
+    elif language == '.jl':
+        proj = pp / "Project.toml"
+        if proj.exists():
+            deps.append({"name": "(see Project.toml)", "source": "Project.toml"})
 
     return deps

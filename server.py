@@ -111,7 +111,7 @@ def inject_tool_capability(
     HOT-PATCHING: Inject a new tool capability into an MCP server (supports multiple languages).
     
     This tool automatically detects the server's language and routes to the appropriate
-    injection function. Supports Python, JavaScript, Rust, C, C++, Go, TypeScript, Zig, Java, and Ruby.
+    injection function. Supports Python, JavaScript, Rust, C, C++, Go, TypeScript, Zig, Java, Ruby, Kotlin, Swift, C#, PHP, Lua, Scala, Elixir, Dart, Haskell, OCaml, Nim, D, Crystal, Raku, and Julia.
     
     It:
     1. Detects the file type and language
@@ -277,7 +277,7 @@ def compile_server(
     force: bool = False
 ) -> Dict[str, Any]:
     """
-    Compile a server that requires compilation (Rust, C, C++, Go, TypeScript, Zig, Java).
+    Compile a server that requires compilation (Rust, C, C++, Go, TypeScript, Zig, Java, Kotlin, Swift, C#, Scala, Elixir, Dart, Haskell, OCaml, Nim, D, Crystal).
     
     This tool:
     1. Detects the build system (Cargo, Make, CMake, Go, npm/tsc, etc.)
@@ -410,6 +410,22 @@ def compile_server(
                 'zig': 'Install Zig: https://ziglang.org/download/',
                 'maven': 'Install Maven: https://maven.apache.org/install.html',
                 'gradle': 'Install Gradle: https://gradle.org/install/',
+                'swift': 'Install Swift: https://swift.org/download/',
+                'dotnet': 'Install .NET SDK: https://dotnet.microsoft.com/download',
+                'composer': 'Install Composer: https://getcomposer.org/download/',
+                'luarocks': 'Install LuaRocks: https://luarocks.org/',
+                'sbt': 'Install sbt: https://www.scala-sbt.org/download.html',
+                'mix': 'Install Elixir: https://elixir-lang.org/install.html',
+                'dart': 'Install Dart SDK: https://dart.dev/get-dart',
+                'cabal': 'Install GHC/Cabal: https://www.haskell.org/ghcup/',
+                'stack': 'Install Stack: https://docs.haskellstack.org/en/stable/install_and_upgrade/',
+                'dune': 'Install OCaml/Dune: https://ocaml.org/install',
+                'nimble': 'Install Nim: https://nim-lang.org/install.html',
+                'dub': 'Install D compiler: https://dlang.org/download.html',
+                'crystal': 'Install Crystal: https://crystal-lang.org/install/',
+                'raku': 'Install Raku: https://rakudo.org/star',
+                'julia': 'Install Julia: https://julialang.org/downloads/',
+                'bundler': 'Install Bundler: gem install bundler',
             }
             suggestion = suggestions.get(build_type, f"Install {command[0]}")
             

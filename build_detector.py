@@ -129,6 +129,137 @@ def detect_build_system(project_path: Path) -> Dict[str, Any]:
         build_info['needs_compilation'] = True
         return build_info
     
+    # Check for Package.swift (Swift)
+    if (project_path / "Package.swift").exists():
+        build_info['type'] = 'swift'
+        build_info['command'] = 'swift'
+        build_info['args'] = ['build']
+        build_info['needs_compilation'] = True
+        return build_info
+    
+    # Check for .csproj or .sln (C# / .NET)
+    csproj_files = list(project_path.glob("*.csproj"))
+    sln_files = list(project_path.glob("*.sln"))
+    if csproj_files or sln_files:
+        build_info['type'] = 'dotnet'
+        build_info['command'] = 'dotnet'
+        build_info['args'] = ['build']
+        build_info['needs_compilation'] = True
+        return build_info
+    
+    # Check for composer.json (PHP)
+    if (project_path / "composer.json").exists():
+        build_info['type'] = 'composer'
+        build_info['command'] = 'composer'
+        build_info['args'] = ['install']
+        build_info['needs_compilation'] = False
+        return build_info
+    
+    # Check for *.rockspec (Lua / LuaRocks)
+    rockspec_files = list(project_path.glob("*.rockspec"))
+    if rockspec_files:
+        build_info['type'] = 'luarocks'
+        build_info['command'] = 'luarocks'
+        build_info['args'] = ['install', str(rockspec_files[0])]
+        build_info['needs_compilation'] = False
+        return build_info
+    
+    # Check for build.sbt (Scala / sbt)
+    if (project_path / "build.sbt").exists():
+        build_info['type'] = 'sbt'
+        build_info['command'] = 'sbt'
+        build_info['args'] = ['compile']
+        build_info['needs_compilation'] = True
+        return build_info
+    
+    # Check for mix.exs (Elixir / Mix)
+    if (project_path / "mix.exs").exists():
+        build_info['type'] = 'mix'
+        build_info['command'] = 'mix'
+        build_info['args'] = ['compile']
+        build_info['needs_compilation'] = True
+        return build_info
+    
+    # Check for pubspec.yaml (Dart)
+    if (project_path / "pubspec.yaml").exists():
+        build_info['type'] = 'dart'
+        build_info['command'] = 'dart'
+        build_info['args'] = ['pub', 'get']
+        build_info['needs_compilation'] = True
+        return build_info
+    
+    # Check for *.cabal or stack.yaml (Haskell)
+    cabal_files = list(project_path.glob("*.cabal"))
+    if cabal_files:
+        build_info['type'] = 'cabal'
+        build_info['command'] = 'cabal'
+        build_info['args'] = ['build']
+        build_info['needs_compilation'] = True
+        return build_info
+    if (project_path / "stack.yaml").exists():
+        build_info['type'] = 'stack'
+        build_info['command'] = 'stack'
+        build_info['args'] = ['build']
+        build_info['needs_compilation'] = True
+        return build_info
+    
+    # Check for dune-project (OCaml / Dune)
+    if (project_path / "dune-project").exists() or (project_path / "dune").exists():
+        build_info['type'] = 'dune'
+        build_info['command'] = 'dune'
+        build_info['args'] = ['build']
+        build_info['needs_compilation'] = True
+        return build_info
+    
+    # Check for *.nimble (Nim / Nimble)
+    nimble_files = list(project_path.glob("*.nimble"))
+    if nimble_files:
+        build_info['type'] = 'nimble'
+        build_info['command'] = 'nimble'
+        build_info['args'] = ['build']
+        build_info['needs_compilation'] = True
+        return build_info
+    
+    # Check for dub.json or dub.sdl (D / Dub)
+    if (project_path / "dub.json").exists() or (project_path / "dub.sdl").exists():
+        build_info['type'] = 'dub'
+        build_info['command'] = 'dub'
+        build_info['args'] = ['build']
+        build_info['needs_compilation'] = True
+        return build_info
+    
+    # Check for shard.yml (Crystal / Shards)
+    if (project_path / "shard.yml").exists():
+        build_info['type'] = 'crystal'
+        build_info['command'] = 'crystal'
+        build_info['args'] = ['build']
+        build_info['needs_compilation'] = True
+        return build_info
+    
+    # Check for META6.json (Raku)
+    if (project_path / "META6.json").exists():
+        build_info['type'] = 'raku'
+        build_info['command'] = 'zef'
+        build_info['args'] = ['install', '.']
+        build_info['needs_compilation'] = False
+        return build_info
+    
+    # Check for Project.toml (Julia)
+    if (project_path / "Project.toml").exists():
+        build_info['type'] = 'julia'
+        build_info['command'] = 'julia'
+        build_info['args'] = ['--project=.', '-e', 'using Pkg; Pkg.instantiate()']
+        build_info['needs_compilation'] = False
+        return build_info
+    
+    # Check for Gemfile (Ruby) - placed after more specific checks
+    if (project_path / "Gemfile").exists():
+        build_info['type'] = 'bundler'
+        build_info['command'] = 'bundle'
+        build_info['args'] = ['install']
+        build_info['needs_compilation'] = False
+        return build_info
+    
     return build_info
 
 
@@ -149,20 +280,32 @@ def get_project_path_from_source_file(source_file_path: Path) -> Path:
     
     # Build system indicators
     indicators = [
-        'Cargo.toml',      # Rust
-        'go.mod',          # Go
-        'package.json',    # Node.js/TypeScript
-        'Makefile',        # Make
-        'makefile',        # Make (lowercase)
-        'CMakeLists.txt',  # CMake
-        'meson.build',     # Meson
-        'build.zig',       # Zig
-        'build.zig.zon',   # Zig (package manifest)
-        'pom.xml',         # Java (Maven)
-        'build.gradle',    # Java (Gradle)
-        'build.gradle.kts',# Java (Gradle Kotlin DSL)
-        'Gemfile',         # Ruby (Bundler)
-        '.git',            # Git repo root
+        'Cargo.toml',       # Rust
+        'go.mod',           # Go
+        'package.json',     # Node.js/TypeScript
+        'Makefile',         # Make
+        'makefile',         # Make (lowercase)
+        'CMakeLists.txt',   # CMake
+        'meson.build',      # Meson
+        'build.zig',        # Zig
+        'build.zig.zon',    # Zig (package manifest)
+        'pom.xml',          # Java (Maven)
+        'build.gradle',     # Java/Kotlin (Gradle)
+        'build.gradle.kts', # Java/Kotlin (Gradle Kotlin DSL)
+        'Gemfile',          # Ruby (Bundler)
+        'Package.swift',    # Swift (SPM)
+        'composer.json',    # PHP (Composer)
+        'build.sbt',        # Scala (sbt)
+        'mix.exs',          # Elixir (Mix)
+        'pubspec.yaml',     # Dart (pub)
+        'stack.yaml',       # Haskell (Stack)
+        'dune-project',     # OCaml (Dune)
+        'dub.json',         # D (Dub)
+        'dub.sdl',          # D (Dub)
+        'shard.yml',        # Crystal (Shards)
+        'META6.json',       # Raku (zef)
+        'Project.toml',     # Julia
+        '.git',             # Git repo root
     ]
     
     # Walk up the directory tree

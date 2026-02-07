@@ -39,6 +39,36 @@ def validate_tool_signature(tool_code: str, language: str) -> Dict[str, Any]:
         _validate_java_tool(tool_code, result)
     elif language == '.rb':
         _validate_ruby_tool(tool_code, result)
+    elif language in ('.kt', '.kts'):
+        _validate_kotlin_tool(tool_code, result)
+    elif language == '.swift':
+        _validate_swift_tool(tool_code, result)
+    elif language == '.cs':
+        _validate_csharp_tool(tool_code, result)
+    elif language == '.php':
+        _validate_php_tool(tool_code, result)
+    elif language == '.lua':
+        _validate_lua_tool(tool_code, result)
+    elif language == '.scala':
+        _validate_scala_tool(tool_code, result)
+    elif language in ('.ex', '.exs'):
+        _validate_elixir_tool(tool_code, result)
+    elif language == '.dart':
+        _validate_dart_tool(tool_code, result)
+    elif language == '.hs':
+        _validate_haskell_tool(tool_code, result)
+    elif language in ('.ml', '.mli'):
+        _validate_ocaml_tool(tool_code, result)
+    elif language == '.nim':
+        _validate_nim_tool(tool_code, result)
+    elif language == '.d':
+        _validate_d_tool(tool_code, result)
+    elif language == '.cr':
+        _validate_crystal_tool(tool_code, result)
+    elif language in ('.raku', '.rakumod', '.pm6'):
+        _validate_raku_tool(tool_code, result)
+    elif language == '.jl':
+        _validate_julia_tool(tool_code, result)
     else:
         result["warnings"].append(f"No specific validation for language '{language}'")
 
@@ -195,6 +225,272 @@ def _validate_ruby_tool(code: str, result: Dict[str, Any]) -> None:
             result["warnings"].append("Ruby not available for syntax checking")
         except subprocess.TimeoutExpired:
             result["warnings"].append("Ruby syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_kotlin_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Kotlin tool."""
+    if not re.search(r'fun\s+\w+', code):
+        result["errors"].append("No function definition found in Kotlin code")
+    with tempfile.NamedTemporaryFile(suffix='.kt', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['kotlinc', '-script', f.name],
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Kotlin syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("kotlinc not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Kotlin syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_swift_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Swift tool."""
+    if not re.search(r'func\s+\w+', code):
+        result["errors"].append("No function definition found in Swift code")
+    with tempfile.NamedTemporaryFile(suffix='.swift', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['swiftc', '-parse', f.name],
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Swift syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("swiftc not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Swift syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_csharp_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a C# tool."""
+    if not re.search(r'(?:class|(?:public|private|protected)\s+.*\s+\w+\s*\()', code):
+        result["errors"].append("No method or class definition found in C# code")
+
+
+def _validate_php_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a PHP tool."""
+    if not re.search(r'function\s+\w+', code):
+        result["errors"].append("No function definition found in PHP code")
+    with tempfile.NamedTemporaryFile(suffix='.php', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['php', '-l', f.name],
+                capture_output=True, text=True, timeout=10
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"PHP syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("PHP not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("PHP syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_lua_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Lua tool."""
+    if not re.search(r'function\s+\w+', code):
+        result["errors"].append("No function definition found in Lua code")
+    with tempfile.NamedTemporaryFile(suffix='.lua', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['luac', '-p', f.name],
+                capture_output=True, text=True, timeout=10
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Lua syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("luac not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Lua syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_scala_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Scala tool."""
+    if not re.search(r'def\s+\w+', code):
+        result["errors"].append("No function definition found in Scala code")
+
+
+def _validate_elixir_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate an Elixir tool."""
+    if not re.search(r'def[p]?\s+\w+', code):
+        result["errors"].append("No function definition found in Elixir code")
+
+
+def _validate_dart_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Dart tool."""
+    if not re.search(r'\w+\s+\w+\s*\(', code):
+        result["warnings"].append("No function definition pattern found in Dart code")
+    with tempfile.NamedTemporaryFile(suffix='.dart', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['dart', 'analyze', '--no-fatal-infos', f.name],
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Dart syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("Dart not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Dart syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_haskell_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Haskell tool."""
+    if not re.search(r'^\w+\s+', code, re.MULTILINE):
+        result["warnings"].append("No function definition pattern found in Haskell code")
+    with tempfile.NamedTemporaryFile(suffix='.hs', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['ghc', '-fno-code', f.name],
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Haskell syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("GHC not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Haskell syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_ocaml_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate an OCaml tool."""
+    if not re.search(r'let\s+\w+', code):
+        result["errors"].append("No let binding found in OCaml code")
+
+
+def _validate_nim_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Nim tool."""
+    if not re.search(r'(?:proc|func)\s+\w+', code):
+        result["errors"].append("No proc/func definition found in Nim code")
+    with tempfile.NamedTemporaryFile(suffix='.nim', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['nim', 'check', f.name],
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Nim syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("Nim not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Nim syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_d_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a D tool."""
+    if not re.search(r'\w+\s+\w+\s*\(', code):
+        result["warnings"].append("No function definition pattern found in D code")
+    with tempfile.NamedTemporaryFile(suffix='.d', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['dmd', '-o-', f.name],
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"D syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("dmd not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("D syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_crystal_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Crystal tool."""
+    if not re.search(r'def\s+\w+', code):
+        result["errors"].append("No method definition found in Crystal code")
+    with tempfile.NamedTemporaryFile(suffix='.cr', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['crystal', 'tool', 'format', '--check', f.name],
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Crystal syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("Crystal not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Crystal syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_raku_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Raku tool."""
+    if not re.search(r'(?:sub|method)\s+\w+', code):
+        result["errors"].append("No sub/method definition found in Raku code")
+    with tempfile.NamedTemporaryFile(suffix='.raku', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['raku', '-c', f.name],
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Raku syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("Raku not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Raku syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_julia_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Julia tool."""
+    if not re.search(r'function\s+\w+', code):
+        result["warnings"].append("No function definition found in Julia code")
+    with tempfile.NamedTemporaryFile(suffix='.jl', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['julia', '--startup-file=no', '-e', f'include("{f.name}")'],
+                capture_output=True, text=True, timeout=30
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Julia syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("Julia not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Julia syntax check timed out")
         finally:
             os.unlink(f.name)
 

@@ -219,6 +219,205 @@ def _extract_ruby_tools(source_code: str) -> List[Dict[str, Any]]:
     return tools
 
 
+def _extract_kotlin_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract function definitions from Kotlin source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'(?:(?:private|public|internal|protected)\s+)?(?:suspend\s+)?fun\s+(\w+)\s*\(([^)]*)\)(?:\s*:\s*(\w+))?', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split(':')[0].strip()} for p in m.group(2).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": m.group(3) or "", "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_swift_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract function definitions from Swift source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'(?:(?:private|public|internal|open|fileprivate)\s+)?(?:static\s+)?func\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*(\S+))?', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split(':')[0].strip()} for p in m.group(2).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": m.group(3) or "", "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_csharp_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract method definitions from C# source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(
+        r'(?:(?:public|private|protected|internal)\s+)?(?:static\s+)?(?:async\s+)?(\w+(?:<[^>]+>)?)\s+(\w+)\s*\(([^)]*)\)\s*\{',
+        source_code
+    ):
+        return_type = m.group(1)
+        name = m.group(2)
+        if name in ('if', 'for', 'while', 'switch', 'return', 'catch', 'class', 'new'):
+            continue
+        if return_type in ('class', 'interface', 'enum', 'namespace', 'new', 'return'):
+            continue
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split()[-1] if p.strip().split() else ""} for p in m.group(3).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": return_type, "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_php_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract function definitions from PHP source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'(?:(?:public|private|protected)\s+)?(?:static\s+)?function\s+(\w+)\s*\(([^)]*)\)', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split('=')[0].strip().split()[-1] if p.strip() else ""} for p in m.group(2).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": "", "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_lua_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract function definitions from Lua source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'(?:local\s+)?function\s+(\w+(?:\.\w+)?)\s*\(([^)]*)\)', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip()} for p in m.group(2).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": "", "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_scala_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract function definitions from Scala source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'def\s+(\w+)\s*(?:\[.*?\])?\s*\(([^)]*)\)\s*(?::\s*(\w+(?:\[.*?\])?))?', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split(':')[0].strip()} for p in m.group(2).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": m.group(3) or "", "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_elixir_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract function definitions from Elixir source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'def[p]?\s+(\w+[?!]?)\s*(?:\(([^)]*)\))?', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = []
+        if m.group(2):
+            params = [{"name": p.strip().split('\\')[0].strip()} for p in m.group(2).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": "", "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_dart_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract function definitions from Dart source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'(?:(?:static|abstract)\s+)?(\w+(?:<[^>]+>)?)\s+(\w+)\s*\(([^)]*)\)\s*(?:async\s*)?\{', source_code):
+        return_type = m.group(1)
+        name = m.group(2)
+        if name in ('if', 'for', 'while', 'switch', 'return', 'catch', 'class', 'new'):
+            continue
+        if return_type in ('class', 'enum', 'mixin', 'extension', 'new', 'return'):
+            continue
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split()[-1] if p.strip().split() else ""} for p in m.group(3).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": return_type, "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_haskell_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract function definitions from Haskell source."""
+    tools: List[Dict[str, Any]] = []
+    seen = set()
+    # Type signatures
+    for m in re.finditer(r'^(\w+)\s+::\s+(.+)$', source_code, re.MULTILINE):
+        name = m.group(1)
+        if name not in seen and name not in ('module', 'import', 'type', 'data', 'class', 'instance'):
+            seen.add(name)
+            line = source_code[:m.start()].count('\n') + 1
+            tools.append({"name": name, "parameters": [], "return_type": m.group(2).strip(), "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_ocaml_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract let bindings from OCaml source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'let\s+(?:rec\s+)?(\w+)\s+([^=]*?)=', source_code):
+        name = m.group(1)
+        if name in ('_', 'open', 'module', 'type'):
+            continue
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip()} for p in m.group(2).split() if p.strip() and p.strip() != '()']
+        tools.append({"name": name, "parameters": params, "return_type": "", "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_nim_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract proc/func definitions from Nim source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'(?:proc|func)\s+(\w+)\s*(?:\*\s*)?\(([^)]*)\)(?:\s*:\s*(\w+))?', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split(':')[0].strip()} for p in m.group(2).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": m.group(3) or "", "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_d_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract function definitions from D source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'(?:(?:public|private|protected|package)\s+)?(?:static\s+)?(\w+)\s+(\w+)\s*\(([^)]*)\)\s*\{', source_code):
+        return_type = m.group(1)
+        name = m.group(2)
+        if name in ('if', 'for', 'while', 'switch', 'return', 'catch', 'class', 'struct', 'new'):
+            continue
+        if return_type in ('class', 'struct', 'interface', 'enum', 'new', 'return', 'import'):
+            continue
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split()[-1] if p.strip().split() else ""} for p in m.group(3).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": return_type, "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_crystal_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract method definitions from Crystal source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'def\s+(?:self\.)?(\w+[?!=]?)\s*(?:\(([^)]*)\))?', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = []
+        if m.group(2):
+            params = [{"name": p.strip().split(':')[0].strip().lstrip('*&')} for p in m.group(2).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": "", "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_raku_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract sub/method definitions from Raku source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'(?:multi\s+)?(?:sub|method)\s+(\w+)\s*\(([^)]*)\)', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split()[-1] if p.strip().split() else p.strip()} for p in m.group(2).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": "", "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
+def _extract_julia_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract function definitions from Julia source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'function\s+(\w+)\s*\(([^)]*)\)', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split(':')[0].strip()} for p in m.group(2).split(',') if p.strip()]
+        tools.append({"name": name, "parameters": params, "return_type": "", "docstring": "", "line_start": line, "line_end": line})
+    # Short form: name(params) = ...
+    for m in re.finditer(r'^(\w+)\s*\(([^)]*)\)\s*=', source_code, re.MULTILINE):
+        name = m.group(1)
+        if name not in ('if', 'for', 'while', 'function'):
+            line = source_code[:m.start()].count('\n') + 1
+            params = [{"name": p.strip().split(':')[0].strip()} for p in m.group(2).split(',') if p.strip()]
+            tools.append({"name": name, "parameters": params, "return_type": "", "docstring": "", "line_start": line, "line_end": line})
+    return tools
+
+
 _TOOL_EXTRACTORS = {
     '.py': _extract_python_tools,
     '.js': _extract_js_tools,
@@ -232,6 +431,26 @@ _TOOL_EXTRACTORS = {
     '.zig': _extract_zig_tools,
     '.java': _extract_java_tools,
     '.rb': _extract_ruby_tools,
+    '.kt': _extract_kotlin_tools,
+    '.kts': _extract_kotlin_tools,
+    '.swift': _extract_swift_tools,
+    '.cs': _extract_csharp_tools,
+    '.php': _extract_php_tools,
+    '.lua': _extract_lua_tools,
+    '.scala': _extract_scala_tools,
+    '.ex': _extract_elixir_tools,
+    '.exs': _extract_elixir_tools,
+    '.dart': _extract_dart_tools,
+    '.hs': _extract_haskell_tools,
+    '.ml': _extract_ocaml_tools,
+    '.mli': _extract_ocaml_tools,
+    '.nim': _extract_nim_tools,
+    '.d': _extract_d_tools,
+    '.cr': _extract_crystal_tools,
+    '.raku': _extract_raku_tools,
+    '.rakumod': _extract_raku_tools,
+    '.pm6': _extract_raku_tools,
+    '.jl': _extract_julia_tools,
 }
 
 

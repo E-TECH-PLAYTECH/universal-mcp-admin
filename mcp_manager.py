@@ -76,7 +76,11 @@ def find_server_source_file(server_name: str) -> Path:
     source_file = None
     
     # Extended file extensions for all supported languages
-    source_extensions = ('.py', '.js', '.rs', '.c', '.cpp', '.cc', '.cxx', '.go', '.ts', '.zig', '.java', '.rb')
+    source_extensions = (
+        '.py', '.js', '.rs', '.c', '.cpp', '.cc', '.cxx', '.go', '.ts', '.zig', '.java', '.rb',
+        '.kt', '.kts', '.swift', '.cs', '.php', '.lua', '.scala', '.ex', '.exs', '.dart',
+        '.hs', '.ml', '.mli', '.nim', '.d', '.cr', '.raku', '.rakumod', '.pm6', '.jl',
+    )
     
     if command == "python" or command == "python3":
         # Look for .py file in args
@@ -136,6 +140,81 @@ def find_server_source_file(server_name: str) -> Path:
         # Look for .rb file in args
         for arg in args:
             if arg.endswith(".rb"):
+                source_file = arg
+                break
+    elif command in ("kotlin", "kotlinc"):
+        for arg in args:
+            if arg.endswith((".kt", ".kts")):
+                source_file = arg
+                break
+    elif command in ("swift", "swiftc"):
+        for arg in args:
+            if arg.endswith(".swift"):
+                source_file = arg
+                break
+    elif command in ("dotnet", "csc", "mcs"):
+        for arg in args:
+            if arg.endswith(".cs"):
+                source_file = arg
+                break
+    elif command == "php":
+        for arg in args:
+            if arg.endswith(".php"):
+                source_file = arg
+                break
+    elif command in ("lua", "luajit"):
+        for arg in args:
+            if arg.endswith(".lua"):
+                source_file = arg
+                break
+    elif command in ("scala", "scalac"):
+        for arg in args:
+            if arg.endswith(".scala"):
+                source_file = arg
+                break
+    elif command in ("elixir", "elixirc", "mix"):
+        for arg in args:
+            if arg.endswith((".ex", ".exs")):
+                source_file = arg
+                break
+    elif command == "dart":
+        for arg in args:
+            if arg.endswith(".dart"):
+                source_file = arg
+                break
+    elif command in ("ghc", "runhaskell", "cabal", "stack"):
+        for arg in args:
+            if arg.endswith(".hs"):
+                source_file = arg
+                break
+    elif command in ("ocamlc", "ocamlopt", "dune"):
+        for arg in args:
+            if arg.endswith((".ml", ".mli")):
+                source_file = arg
+                break
+    elif command in ("nim", "nimble"):
+        for arg in args:
+            if arg.endswith(".nim"):
+                source_file = arg
+                break
+    elif command in ("dmd", "ldc2", "gdc", "dub"):
+        for arg in args:
+            if arg.endswith(".d"):
+                source_file = arg
+                break
+    elif command == "crystal":
+        for arg in args:
+            if arg.endswith(".cr"):
+                source_file = arg
+                break
+    elif command in ("raku", "perl6"):
+        for arg in args:
+            if arg.endswith((".raku", ".rakumod", ".pm6")):
+                source_file = arg
+                break
+    elif command == "julia":
+        for arg in args:
+            if arg.endswith(".jl"):
                 source_file = arg
                 break
     elif command == "uvx" or command == "npx":
@@ -1422,6 +1501,941 @@ def inject_tool_into_ruby_file(
 
 
 # ============================================================================
+# Kotlin Language Handlers
+# ============================================================================
+
+def validate_kotlin_code(code: str) -> Tuple[bool, str]:
+    """Validate Kotlin code using kotlinc."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.kt', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["kotlinc", "-script", temp_path],
+                capture_output=True, text=True, timeout=15
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"Kotlin syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "kotlinc not found. Install Kotlin to validate Kotlin code."
+    except subprocess.TimeoutExpired:
+        return False, "Kotlin validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Kotlin: {str(e)}"
+
+
+def check_tool_exists_kotlin(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in Kotlin source code."""
+    patterns = [
+        rf'fun\s+{re.escape(tool_name)}\s*\(',
+        rf'class\s+{re.escape(tool_name)}\s',
+        rf'val\s+{re.escape(tool_name)}\s*[=:]',
+        rf'var\s+{re.escape(tool_name)}\s*[=:]',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_kotlin_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a Kotlin MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_kotlin(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_kotlin_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Kotlin code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"// Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Swift Language Handlers
+# ============================================================================
+
+def validate_swift_code(code: str) -> Tuple[bool, str]:
+    """Validate Swift code using swiftc -parse."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.swift', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["swiftc", "-parse", temp_path],
+                capture_output=True, text=True, timeout=15
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"Swift syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "swiftc not found. Install Swift to validate Swift code."
+    except subprocess.TimeoutExpired:
+        return False, "Swift validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Swift: {str(e)}"
+
+
+def check_tool_exists_swift(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in Swift source code."""
+    patterns = [
+        rf'func\s+{re.escape(tool_name)}\s*\(',
+        rf'class\s+{re.escape(tool_name)}\s',
+        rf'struct\s+{re.escape(tool_name)}\s',
+        rf'let\s+{re.escape(tool_name)}\s*[=:]',
+        rf'var\s+{re.escape(tool_name)}\s*[=:]',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_swift_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a Swift MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_swift(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_swift_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Swift code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"// Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# C# Language Handlers
+# ============================================================================
+
+def validate_csharp_code(code: str) -> Tuple[bool, str]:
+    """Validate C# code using dotnet build or csc."""
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            test_file = tmp_path / "Tool.cs"
+            test_file.write_text(code, encoding='utf-8')
+            for compiler in [["dotnet", "build"], ["csc", "/nologo", "/t:library"]]:
+                try:
+                    process = subprocess.run(
+                        compiler + [str(test_file)] if compiler[0] == "csc" else compiler,
+                        capture_output=True, text=True, timeout=15, cwd=tmpdir
+                    )
+                    if process.returncode == 0:
+                        return True, ""
+                    error_msg = process.stderr.strip() or process.stdout.strip()
+                    return False, f"C# syntax error: {error_msg}"
+                except FileNotFoundError:
+                    continue
+            return False, "Neither dotnet nor csc found. Install .NET SDK to validate C# code."
+    except subprocess.TimeoutExpired:
+        return False, "C# validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate C#: {str(e)}"
+
+
+def check_tool_exists_csharp(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in C# source code."""
+    patterns = [
+        rf'(?:public|private|protected|internal)\s+.*\s+{re.escape(tool_name)}\s*\(',
+        rf'static\s+.*\s+{re.escape(tool_name)}\s*\(',
+        rf'class\s+{re.escape(tool_name)}\s',
+        rf'interface\s+{re.escape(tool_name)}\s',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_csharp_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a C# MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_csharp(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_csharp_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid C# code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"// Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# PHP Language Handlers
+# ============================================================================
+
+def validate_php_code(code: str) -> Tuple[bool, str]:
+    """Validate PHP code using php -l."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.php', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["php", "-l", temp_path],
+                capture_output=True, text=True, timeout=10
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"PHP syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "php not found. Install PHP to validate PHP code."
+    except subprocess.TimeoutExpired:
+        return False, "PHP validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate PHP: {str(e)}"
+
+
+def check_tool_exists_php(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in PHP source code."""
+    patterns = [
+        rf'function\s+{re.escape(tool_name)}\s*\(',
+        rf'class\s+{re.escape(tool_name)}\s',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_php_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a PHP MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_php(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_php_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid PHP code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"// Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}"
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Lua Language Handlers
+# ============================================================================
+
+def validate_lua_code(code: str) -> Tuple[bool, str]:
+    """Validate Lua code using luac -p."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.lua', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["luac", "-p", temp_path],
+                capture_output=True, text=True, timeout=10
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"Lua syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "luac not found. Install Lua to validate Lua code."
+    except subprocess.TimeoutExpired:
+        return False, "Lua validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Lua: {str(e)}"
+
+
+def check_tool_exists_lua(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in Lua source code."""
+    patterns = [
+        rf'function\s+{re.escape(tool_name)}\s*\(',
+        rf'local\s+function\s+{re.escape(tool_name)}\s*\(',
+        rf'{re.escape(tool_name)}\s*=\s*function\s*\(',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_lua_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a Lua MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_lua(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_lua_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Lua code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"-- Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}"
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Scala Language Handlers
+# ============================================================================
+
+def validate_scala_code(code: str) -> Tuple[bool, str]:
+    """Validate Scala code using scalac."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.scala', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["scalac", temp_path],
+                capture_output=True, text=True, timeout=30
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"Scala syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "scalac not found. Install Scala to validate Scala code."
+    except subprocess.TimeoutExpired:
+        return False, "Scala validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Scala: {str(e)}"
+
+
+def check_tool_exists_scala(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in Scala source code."""
+    patterns = [
+        rf'def\s+{re.escape(tool_name)}\s*[\(\[]',
+        rf'class\s+{re.escape(tool_name)}\s',
+        rf'object\s+{re.escape(tool_name)}\s',
+        rf'val\s+{re.escape(tool_name)}\s*[=:]',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_scala_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a Scala MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_scala(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_scala_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Scala code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"// Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Elixir Language Handlers
+# ============================================================================
+
+def validate_elixir_code(code: str) -> Tuple[bool, str]:
+    """Validate Elixir code using elixir compiler."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.exs', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["elixir", "-e", f"Code.compile_file(\"{temp_path}\")"],
+                capture_output=True, text=True, timeout=15
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"Elixir syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "elixir not found. Install Elixir to validate Elixir code."
+    except subprocess.TimeoutExpired:
+        return False, "Elixir validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Elixir: {str(e)}"
+
+
+def check_tool_exists_elixir(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in Elixir source code."""
+    patterns = [
+        rf'def\s+{re.escape(tool_name)}\s*[\(,]',
+        rf'def\s+{re.escape(tool_name)}\s+do',
+        rf'defp\s+{re.escape(tool_name)}\s*[\(,]',
+        rf'defmodule\s+{re.escape(tool_name)}\s',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_elixir_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into an Elixir MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_elixir(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_elixir_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Elixir code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"# Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Dart Language Handlers
+# ============================================================================
+
+def validate_dart_code(code: str) -> Tuple[bool, str]:
+    """Validate Dart code using dart analyze."""
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            test_file = tmp_path / "tool.dart"
+            test_file.write_text(code, encoding='utf-8')
+            process = subprocess.run(
+                ["dart", "analyze", "--no-fatal-infos", str(test_file)],
+                capture_output=True, text=True, timeout=15, cwd=tmpdir
+            )
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"Dart syntax error: {error_msg}"
+    except FileNotFoundError:
+        return False, "dart not found. Install Dart SDK to validate Dart code."
+    except subprocess.TimeoutExpired:
+        return False, "Dart validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Dart: {str(e)}"
+
+
+def check_tool_exists_dart(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in Dart source code."""
+    patterns = [
+        rf'\w+\s+{re.escape(tool_name)}\s*\(',
+        rf'class\s+{re.escape(tool_name)}\s',
+        rf'var\s+{re.escape(tool_name)}\s*=',
+        rf'final\s+{re.escape(tool_name)}\s*=',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_dart_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a Dart MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_dart(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_dart_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Dart code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"// Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Haskell Language Handlers
+# ============================================================================
+
+def validate_haskell_code(code: str) -> Tuple[bool, str]:
+    """Validate Haskell code using ghc -fno-code."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.hs', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["ghc", "-fno-code", temp_path],
+                capture_output=True, text=True, timeout=15
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"Haskell syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "ghc not found. Install GHC to validate Haskell code."
+    except subprocess.TimeoutExpired:
+        return False, "Haskell validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Haskell: {str(e)}"
+
+
+def check_tool_exists_haskell(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in Haskell source code."""
+    patterns = [
+        rf'^{re.escape(tool_name)}\s+::\s+',  # type signature
+        rf'^{re.escape(tool_name)}\s+',  # definition
+    ]
+    return any(re.search(p, source_code, re.MULTILINE) for p in patterns)
+
+
+def inject_tool_into_haskell_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a Haskell MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_haskell(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_haskell_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Haskell code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"-- Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# OCaml Language Handlers
+# ============================================================================
+
+def validate_ocaml_code(code: str) -> Tuple[bool, str]:
+    """Validate OCaml code using ocamlfind or ocamlc."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ml', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["ocamlc", "-c", temp_path],
+                capture_output=True, text=True, timeout=15
+            )
+            os.unlink(temp_path)
+            # Clean up .cmo/.cmi files
+            for ext in ('.cmo', '.cmi'):
+                p = Path(temp_path).with_suffix(ext)
+                if p.exists():
+                    p.unlink()
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"OCaml syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "ocamlc not found. Install OCaml to validate OCaml code."
+    except subprocess.TimeoutExpired:
+        return False, "OCaml validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate OCaml: {str(e)}"
+
+
+def check_tool_exists_ocaml(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in OCaml source code."""
+    patterns = [
+        rf'let\s+{re.escape(tool_name)}\s',
+        rf'module\s+{re.escape(tool_name)}\s',
+        rf'val\s+{re.escape(tool_name)}\s*:',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_ocaml_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into an OCaml MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_ocaml(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_ocaml_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid OCaml code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"(* Tool injected by universal-mcp-admin *)\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Nim Language Handlers
+# ============================================================================
+
+def validate_nim_code(code: str) -> Tuple[bool, str]:
+    """Validate Nim code using nim check."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.nim', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["nim", "check", temp_path],
+                capture_output=True, text=True, timeout=15
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"Nim syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "nim not found. Install Nim to validate Nim code."
+    except subprocess.TimeoutExpired:
+        return False, "Nim validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Nim: {str(e)}"
+
+
+def check_tool_exists_nim(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in Nim source code."""
+    patterns = [
+        rf'proc\s+{re.escape(tool_name)}\s*[\(\*]',
+        rf'func\s+{re.escape(tool_name)}\s*[\(\*]',
+        rf'type\s+{re.escape(tool_name)}\s',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_nim_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a Nim MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_nim(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_nim_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Nim code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"# Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# D Language Handlers
+# ============================================================================
+
+def validate_d_code(code: str) -> Tuple[bool, str]:
+    """Validate D code using dmd."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.d', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["dmd", "-o-", temp_path],
+                capture_output=True, text=True, timeout=15
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"D syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "dmd not found. Install D compiler to validate D code."
+    except subprocess.TimeoutExpired:
+        return False, "D validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate D: {str(e)}"
+
+
+def check_tool_exists_d(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in D source code."""
+    patterns = [
+        rf'\w+\s+{re.escape(tool_name)}\s*\(',
+        rf'class\s+{re.escape(tool_name)}\s',
+        rf'struct\s+{re.escape(tool_name)}\s',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_d_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a D MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_d(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_d_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid D code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"// Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Crystal Language Handlers
+# ============================================================================
+
+def validate_crystal_code(code: str) -> Tuple[bool, str]:
+    """Validate Crystal code using crystal tool format --check."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.cr', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["crystal", "tool", "format", "--check", temp_path],
+                capture_output=True, text=True, timeout=15
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"Crystal syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "crystal not found. Install Crystal to validate Crystal code."
+    except subprocess.TimeoutExpired:
+        return False, "Crystal validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Crystal: {str(e)}"
+
+
+def check_tool_exists_crystal(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in Crystal source code."""
+    patterns = [
+        rf'def\s+{re.escape(tool_name)}\s*[\((\n]',
+        rf'class\s+{re.escape(tool_name)}\s',
+        rf'module\s+{re.escape(tool_name)}\s',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_crystal_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a Crystal MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_crystal(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_crystal_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Crystal code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"# Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Raku Language Handlers
+# ============================================================================
+
+def validate_raku_code(code: str) -> Tuple[bool, str]:
+    """Validate Raku code using raku -c."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.raku', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["raku", "-c", temp_path],
+                capture_output=True, text=True, timeout=15
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"Raku syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "raku not found. Install Raku to validate Raku code."
+    except subprocess.TimeoutExpired:
+        return False, "Raku validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Raku: {str(e)}"
+
+
+def check_tool_exists_raku(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in Raku source code."""
+    patterns = [
+        rf'sub\s+{re.escape(tool_name)}\s*[\((\s]',
+        rf'method\s+{re.escape(tool_name)}\s*[\((\s]',
+        rf'class\s+{re.escape(tool_name)}\s',
+        rf'module\s+{re.escape(tool_name)}\s',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_raku_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a Raku MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_raku(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_raku_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Raku code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"# Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}"
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Julia Language Handlers
+# ============================================================================
+
+def validate_julia_code(code: str) -> Tuple[bool, str]:
+    """Validate Julia code using julia --startup-file=no."""
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.jl', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        try:
+            process = subprocess.run(
+                ["julia", "--startup-file=no", "-e", f'include("{temp_path}")'],
+                capture_output=True, text=True, timeout=30
+            )
+            os.unlink(temp_path)
+            if process.returncode == 0:
+                return True, ""
+            error_msg = process.stderr.strip() or process.stdout.strip()
+            return False, f"Julia syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "julia not found. Install Julia to validate Julia code."
+    except subprocess.TimeoutExpired:
+        return False, "Julia validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Julia: {str(e)}"
+
+
+def check_tool_exists_julia(source_code: str, tool_name: str) -> bool:
+    """Check if a tool exists in Julia source code."""
+    patterns = [
+        rf'function\s+{re.escape(tool_name)}\s*[\((\n]',
+        rf'{re.escape(tool_name)}\s*\([^)]*\)\s*=',  # short-form
+        rf'struct\s+{re.escape(tool_name)}\s',
+        rf'module\s+{re.escape(tool_name)}\s',
+    ]
+    return any(re.search(p, source_code) for p in patterns)
+
+
+def inject_tool_into_julia_file(server_name: str, tool_name: str, tool_code: str) -> Tuple[bool, str]:
+    """Inject a new tool into a Julia MCP server."""
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        if check_tool_exists_julia(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        is_valid, error_msg = validate_julia_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Julia code: {error_msg}"
+        backup_path = create_backup(source_path)
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"# Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}"
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
 # Language Registry and Generic Dispatcher
 # ============================================================================
 
@@ -1508,6 +2522,146 @@ LANGUAGE_HANDLERS: Dict[str, Dict[str, Any]] = {
         'validate': validate_ruby_code,
         'check_tool_exists': check_tool_exists_ruby,
         'inject': inject_tool_into_ruby_file,
+        'needs_compilation': False,
+        'comment_prefix': '#'
+    },
+    '.kt': {
+        'validate': validate_kotlin_code,
+        'check_tool_exists': check_tool_exists_kotlin,
+        'inject': inject_tool_into_kotlin_file,
+        'needs_compilation': True,
+        'comment_prefix': '//'
+    },
+    '.kts': {
+        'validate': validate_kotlin_code,
+        'check_tool_exists': check_tool_exists_kotlin,
+        'inject': inject_tool_into_kotlin_file,
+        'needs_compilation': True,
+        'comment_prefix': '//'
+    },
+    '.swift': {
+        'validate': validate_swift_code,
+        'check_tool_exists': check_tool_exists_swift,
+        'inject': inject_tool_into_swift_file,
+        'needs_compilation': True,
+        'comment_prefix': '//'
+    },
+    '.cs': {
+        'validate': validate_csharp_code,
+        'check_tool_exists': check_tool_exists_csharp,
+        'inject': inject_tool_into_csharp_file,
+        'needs_compilation': True,
+        'comment_prefix': '//'
+    },
+    '.php': {
+        'validate': validate_php_code,
+        'check_tool_exists': check_tool_exists_php,
+        'inject': inject_tool_into_php_file,
+        'needs_compilation': False,
+        'comment_prefix': '//'
+    },
+    '.lua': {
+        'validate': validate_lua_code,
+        'check_tool_exists': check_tool_exists_lua,
+        'inject': inject_tool_into_lua_file,
+        'needs_compilation': False,
+        'comment_prefix': '--'
+    },
+    '.scala': {
+        'validate': validate_scala_code,
+        'check_tool_exists': check_tool_exists_scala,
+        'inject': inject_tool_into_scala_file,
+        'needs_compilation': True,
+        'comment_prefix': '//'
+    },
+    '.ex': {
+        'validate': validate_elixir_code,
+        'check_tool_exists': check_tool_exists_elixir,
+        'inject': inject_tool_into_elixir_file,
+        'needs_compilation': True,
+        'comment_prefix': '#'
+    },
+    '.exs': {
+        'validate': validate_elixir_code,
+        'check_tool_exists': check_tool_exists_elixir,
+        'inject': inject_tool_into_elixir_file,
+        'needs_compilation': True,
+        'comment_prefix': '#'
+    },
+    '.dart': {
+        'validate': validate_dart_code,
+        'check_tool_exists': check_tool_exists_dart,
+        'inject': inject_tool_into_dart_file,
+        'needs_compilation': True,
+        'comment_prefix': '//'
+    },
+    '.hs': {
+        'validate': validate_haskell_code,
+        'check_tool_exists': check_tool_exists_haskell,
+        'inject': inject_tool_into_haskell_file,
+        'needs_compilation': True,
+        'comment_prefix': '--'
+    },
+    '.ml': {
+        'validate': validate_ocaml_code,
+        'check_tool_exists': check_tool_exists_ocaml,
+        'inject': inject_tool_into_ocaml_file,
+        'needs_compilation': True,
+        'comment_prefix': '(*'
+    },
+    '.mli': {
+        'validate': validate_ocaml_code,
+        'check_tool_exists': check_tool_exists_ocaml,
+        'inject': inject_tool_into_ocaml_file,
+        'needs_compilation': True,
+        'comment_prefix': '(*'
+    },
+    '.nim': {
+        'validate': validate_nim_code,
+        'check_tool_exists': check_tool_exists_nim,
+        'inject': inject_tool_into_nim_file,
+        'needs_compilation': True,
+        'comment_prefix': '#'
+    },
+    '.d': {
+        'validate': validate_d_code,
+        'check_tool_exists': check_tool_exists_d,
+        'inject': inject_tool_into_d_file,
+        'needs_compilation': True,
+        'comment_prefix': '//'
+    },
+    '.cr': {
+        'validate': validate_crystal_code,
+        'check_tool_exists': check_tool_exists_crystal,
+        'inject': inject_tool_into_crystal_file,
+        'needs_compilation': True,
+        'comment_prefix': '#'
+    },
+    '.raku': {
+        'validate': validate_raku_code,
+        'check_tool_exists': check_tool_exists_raku,
+        'inject': inject_tool_into_raku_file,
+        'needs_compilation': False,
+        'comment_prefix': '#'
+    },
+    '.rakumod': {
+        'validate': validate_raku_code,
+        'check_tool_exists': check_tool_exists_raku,
+        'inject': inject_tool_into_raku_file,
+        'needs_compilation': False,
+        'comment_prefix': '#'
+    },
+    '.pm6': {
+        'validate': validate_raku_code,
+        'check_tool_exists': check_tool_exists_raku,
+        'inject': inject_tool_into_raku_file,
+        'needs_compilation': False,
+        'comment_prefix': '#'
+    },
+    '.jl': {
+        'validate': validate_julia_code,
+        'check_tool_exists': check_tool_exists_julia,
+        'inject': inject_tool_into_julia_file,
         'needs_compilation': False,
         'comment_prefix': '#'
     }
@@ -1610,6 +2764,36 @@ def find_tool_in_source(
         return _find_brace_tool(lines, tool_name, r'(?:(?:public|private|protected)\s+)?(?:static\s+)?(?:\w+\s+)' + re.escape(tool_name) + r'\s*\(')
     elif language == '.rb':
         return _find_ruby_tool(lines, tool_name)
+    elif language in ('.kt', '.kts'):
+        return _find_brace_tool(lines, tool_name, r'fun\s+' + re.escape(tool_name) + r'\s*\(')
+    elif language == '.swift':
+        return _find_brace_tool(lines, tool_name, r'func\s+' + re.escape(tool_name) + r'\s*\(')
+    elif language == '.cs':
+        return _find_brace_tool(lines, tool_name, r'(?:(?:public|private|protected|internal)\s+)?(?:static\s+)?(?:\w+\s+)' + re.escape(tool_name) + r'\s*\(')
+    elif language == '.php':
+        return _find_brace_tool(lines, tool_name, r'function\s+' + re.escape(tool_name) + r'\s*\(')
+    elif language == '.lua':
+        return _find_lua_tool(lines, tool_name)
+    elif language == '.scala':
+        return _find_brace_tool(lines, tool_name, r'def\s+' + re.escape(tool_name) + r'\s*[\(\[]')
+    elif language in ('.ex', '.exs'):
+        return _find_elixir_tool(lines, tool_name)
+    elif language == '.dart':
+        return _find_brace_tool(lines, tool_name, r'\w+\s+' + re.escape(tool_name) + r'\s*\(')
+    elif language == '.hs':
+        return _find_haskell_tool(lines, tool_name)
+    elif language in ('.ml', '.mli'):
+        return _find_ocaml_tool(lines, tool_name)
+    elif language == '.nim':
+        return _find_nim_tool(lines, tool_name)
+    elif language == '.d':
+        return _find_brace_tool(lines, tool_name, r'\w+\s+' + re.escape(tool_name) + r'\s*\(')
+    elif language == '.cr':
+        return _find_ruby_tool(lines, tool_name)  # Crystal uses same def/end syntax
+    elif language in ('.raku', '.rakumod', '.pm6'):
+        return _find_brace_tool(lines, tool_name, r'(?:sub|method)\s+' + re.escape(tool_name) + r'\s*[\(\s]')
+    elif language == '.jl':
+        return _find_julia_tool(lines, tool_name)
     return None
 
 
@@ -1703,6 +2887,147 @@ def _find_ruby_tool(lines: list, tool_name: str) -> Optional[Tuple[int, int, str
                     if current_indent <= indent:
                         end += 1  # Include the 'end' line
                         break
+                end += 1
+            return start, end, '\n'.join(lines[start:end])
+    return None
+
+
+def _find_lua_tool(lines: list, tool_name: str) -> Optional[Tuple[int, int, str]]:
+    """Find a Lua function definition (uses function/end blocks)."""
+    patterns = [
+        re.compile(rf'function\s+{re.escape(tool_name)}\s*\('),
+        re.compile(rf'local\s+function\s+{re.escape(tool_name)}\s*\('),
+    ]
+    for pat in patterns:
+        for i, line in enumerate(lines):
+            if pat.search(line):
+                start = i
+                while start > 0 and lines[start - 1].strip().startswith('--'):
+                    start -= 1
+                end = i + 1
+                depth = 1
+                while end < len(lines) and depth > 0:
+                    stripped = lines[end].strip()
+                    # Count block openers/closers
+                    for keyword in ['function', 'if', 'for', 'while', 'repeat']:
+                        if re.match(rf'\b{keyword}\b', stripped):
+                            depth += 1
+                    if stripped == 'end' or stripped.startswith('end ') or stripped.startswith('end)'):
+                        depth -= 1
+                    end += 1
+                return start, end, '\n'.join(lines[start:end])
+    return None
+
+
+def _find_elixir_tool(lines: list, tool_name: str) -> Optional[Tuple[int, int, str]]:
+    """Find an Elixir function definition (uses def/end blocks)."""
+    func_pattern = re.compile(rf'def[p]?\s+{re.escape(tool_name)}\s*[\(,\s]')
+    for i, line in enumerate(lines):
+        if func_pattern.search(line):
+            start = i
+            while start > 0 and lines[start - 1].strip().startswith('#'):
+                start -= 1
+            while start > 0 and lines[start - 1].strip().startswith('@'):
+                start -= 1
+            end = i + 1
+            depth = 1
+            while end < len(lines) and depth > 0:
+                stripped = lines[end].strip()
+                for keyword in ['def ', 'defp ', 'defmodule ', 'if ', 'case ', 'cond ', 'fn ']:
+                    if stripped.startswith(keyword):
+                        depth += 1
+                        break
+                if stripped == 'end' or stripped.startswith('end)'):
+                    depth -= 1
+                end += 1
+            return start, end, '\n'.join(lines[start:end])
+    return None
+
+
+def _find_haskell_tool(lines: list, tool_name: str) -> Optional[Tuple[int, int, str]]:
+    """Find a Haskell function definition."""
+    sig_pattern = re.compile(rf'^{re.escape(tool_name)}\s+::')
+    def_pattern = re.compile(rf'^{re.escape(tool_name)}\s+')
+    for i, line in enumerate(lines):
+        if sig_pattern.match(line) or def_pattern.match(line):
+            start = i
+            while start > 0 and lines[start - 1].strip().startswith('--'):
+                start -= 1
+            end = i + 1
+            while end < len(lines):
+                l = lines[end]
+                if l.strip() == '' or (l[0:1] != ' ' and l[0:1] != '\t' and not l.startswith(tool_name)):
+                    break
+                end += 1
+            while end > i + 1 and not lines[end - 1].strip():
+                end -= 1
+            return start, end, '\n'.join(lines[start:end])
+    return None
+
+
+def _find_ocaml_tool(lines: list, tool_name: str) -> Optional[Tuple[int, int, str]]:
+    """Find an OCaml let binding."""
+    let_pattern = re.compile(rf'let\s+{re.escape(tool_name)}\s')
+    for i, line in enumerate(lines):
+        if let_pattern.search(line):
+            start = i
+            while start > 0 and lines[start - 1].strip().startswith('(*'):
+                start -= 1
+            end = i + 1
+            while end < len(lines):
+                l = lines[end].strip()
+                if l == '' or (l.startswith('let ') and not l.startswith('let ' + tool_name)):
+                    break
+                end += 1
+            while end > i + 1 and not lines[end - 1].strip():
+                end -= 1
+            return start, end, '\n'.join(lines[start:end])
+    return None
+
+
+def _find_nim_tool(lines: list, tool_name: str) -> Optional[Tuple[int, int, str]]:
+    """Find a Nim proc/func definition (indentation-based)."""
+    proc_pattern = re.compile(rf'(?:proc|func)\s+{re.escape(tool_name)}\s*[\(\*]')
+    for i, line in enumerate(lines):
+        if proc_pattern.search(line):
+            start = i
+            while start > 0 and lines[start - 1].strip().startswith('#'):
+                start -= 1
+            indent = len(line) - len(line.lstrip())
+            end = i + 1
+            while end < len(lines):
+                l = lines[end]
+                if l.strip() == '':
+                    end += 1
+                    continue
+                current_indent = len(l) - len(l.lstrip())
+                if current_indent <= indent and l.strip():
+                    break
+                end += 1
+            while end > i + 1 and not lines[end - 1].strip():
+                end -= 1
+            return start, end, '\n'.join(lines[start:end])
+    return None
+
+
+def _find_julia_tool(lines: list, tool_name: str) -> Optional[Tuple[int, int, str]]:
+    """Find a Julia function definition (uses function/end blocks)."""
+    func_pattern = re.compile(rf'function\s+{re.escape(tool_name)}\s*[\((\n]')
+    for i, line in enumerate(lines):
+        if func_pattern.search(line):
+            start = i
+            while start > 0 and lines[start - 1].strip().startswith('#'):
+                start -= 1
+            end = i + 1
+            depth = 1
+            while end < len(lines) and depth > 0:
+                stripped = lines[end].strip()
+                for keyword in ['function ', 'if ', 'for ', 'while ', 'begin', 'let ', 'try']:
+                    if stripped.startswith(keyword):
+                        depth += 1
+                        break
+                if stripped == 'end' or stripped.startswith('end ') or stripped.startswith('end#'):
+                    depth -= 1
                 end += 1
             return start, end, '\n'.join(lines[start:end])
     return None
