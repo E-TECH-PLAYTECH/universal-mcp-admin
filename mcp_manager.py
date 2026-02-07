@@ -134,8 +134,9 @@ def read_source_file(server_name: str, max_chars: int = 50000) -> Tuple[str, Pat
     with open(source_path, "r", encoding="utf-8") as f:
         content = f.read()
     
-    if len(content) > max_chars:
-        content = content[:max_chars] + f"\n\n... (truncated, total size: {len(content)} chars)"
+    original_length = len(content)
+    if original_length > max_chars:
+        content = content[:max_chars] + f"\n\n... (truncated, total size: {original_length} chars)"
     
     return content, source_path
 
@@ -223,8 +224,8 @@ def inject_tool_into_python_file(
         Tuple of (success, message)
     """
     try:
-        # Read the source file
-        source_code, source_path = read_source_file(server_name, max_chars=1000000)
+        # Read the source file (limit to reasonable size for duplicate check)
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
         
         # Check if tool already exists
         if check_tool_exists(source_code, tool_name):

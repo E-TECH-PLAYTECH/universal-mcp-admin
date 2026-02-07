@@ -21,7 +21,9 @@ def get_default_config_path() -> Path:
     if system == "Darwin":  # macOS
         return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
     elif system == "Windows":
-        appdata = os.getenv("APPDATA", "")
+        appdata = os.getenv("APPDATA")
+        if not appdata:
+            raise ValueError("APPDATA environment variable not set on Windows")
         return Path(appdata) / "Claude" / "claude_desktop_config.json"
     else:  # Linux and others
         return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
