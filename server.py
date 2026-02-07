@@ -28,6 +28,7 @@ import resource_discovery
 import server_monitor
 import tool_analyzer
 import tool_tester
+import export_manager
 
 # Load environment variables
 load_dotenv()
@@ -1389,6 +1390,86 @@ def create_branch(
         Dictionary with success status
     """
     return git_manager.create_branch(server_name, branch_name)
+
+
+# ============================================================================
+# Feature 13: Data Export for Training and RAG
+# ============================================================================
+
+
+@mcp.tool()
+def export_training_data(
+    output_path: str = "training_data.jsonl",
+    server_name: Optional[str] = None,
+    include_examples: bool = True,
+    fmt: str = "alpaca",
+) -> Dict[str, Any]:
+    """
+    Export MCP server data in JSONL format suitable for training/fine-tuning LLMs.
+
+    Creates a JSONL file where each line is a JSON object. Supports two formats:
+    - "alpaca": {"instruction", "input", "output"} for Phi-2, LLaMA, Mistral
+    - "conversational": {"messages": [...]} for chat-tuned models via Ollama
+
+    Exports tool definitions, usage examples, server configs, and tool listings.
+
+    Args:
+        output_path: Path to output JSONL file (default: "training_data.jsonl")
+        server_name: Optional specific server name, or None for all servers
+        include_examples: Whether to include usage-example lines (default: True)
+        fmt: Output format - "alpaca" or "conversational" (default: "alpaca")
+
+    Returns:
+        Dictionary containing:
+        - success: Whether export succeeded
+        - output_file: Absolute path to created file
+        - lines_written: Number of training examples written
+        - servers_exported: Number of servers processed
+        - format: The format used
+
+    Example:
+        export_training_data("my_data.jsonl", server_name="my-server", fmt="conversational")
+    """
+    return export_manager.export_training_data(
+        output_path, server_name, include_examples, fmt
+    )
+
+
+@mcp.tool()
+def export_rag_data(
+    output_path: str = "rag_data.json",
+    server_name: Optional[str] = None,
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200,
+) -> Dict[str, Any]:
+    """
+    Export MCP server data in chunked JSON format suitable for RAG systems.
+
+    Creates a JSON file with line-aware chunked content and rich metadata.
+    Each chunk includes content text, a unique chunk_id, and metadata
+    (server name, tool name, type, source file, language, line numbers).
+
+    Suitable for ingesting into vector databases for retrieval-augmented generation.
+
+    Args:
+        output_path: Path to output JSON file (default: "rag_data.json")
+        server_name: Optional specific server name, or None for all servers
+        chunk_size: Maximum characters per chunk (default: 1000)
+        chunk_overlap: Characters to overlap between chunks (default: 200, must be < chunk_size)
+
+    Returns:
+        Dictionary containing:
+        - success: Whether export succeeded
+        - output_file: Absolute path to created file
+        - chunks_created: Number of chunks created
+        - servers_exported: Number of servers processed
+
+    Example:
+        export_rag_data("my_rag.json", server_name="my-server", chunk_size=1500)
+    """
+    return export_manager.export_rag_data(
+        output_path, server_name, chunk_size, chunk_overlap
+    )
 
 
 if __name__ == "__main__":
