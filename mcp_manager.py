@@ -189,7 +189,7 @@ def check_tool_exists(source_code: str, tool_name: str) -> bool:
     # Look for common patterns of tool definition
     patterns = [
         rf'@\w+\.tool\(\s*["\']?{re.escape(tool_name)}["\']?',  # @mcp.tool("tool_name")
-        rf'@\w+\.tool\s*\n\s*def\s+{re.escape(tool_name)}\s*\(',  # @mcp.tool\ndef tool_name(
+        rf'@\w+\.tool\(\)\s*\n\s*def\s+{re.escape(tool_name)}\s*\(',  # @mcp.tool()\ndef tool_name(
         rf'def\s+{re.escape(tool_name)}\s*\([^)]*\)\s*->',  # def tool_name(...) ->
     ]
     
