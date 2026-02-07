@@ -33,6 +33,12 @@ def validate_tool_signature(tool_code: str, language: str) -> Dict[str, Any]:
         _validate_go_tool(tool_code, result)
     elif language in ('.c', '.cpp', '.cc', '.cxx'):
         _validate_c_tool(tool_code, result)
+    elif language == '.zig':
+        _validate_zig_tool(tool_code, result)
+    elif language == '.java':
+        _validate_java_tool(tool_code, result)
+    elif language == '.rb':
+        _validate_ruby_tool(tool_code, result)
     else:
         result["warnings"].append(f"No specific validation for language '{language}'")
 
@@ -120,6 +126,77 @@ def _validate_go_tool(code: str, result: Dict[str, Any]) -> None:
 def _validate_c_tool(code: str, result: Dict[str, Any]) -> None:
     if not re.search(r'\w+\s+\w+\s*\([^)]*\)\s*\{', code):
         result["warnings"].append("No function definition pattern found in C/C++ code")
+
+
+def _validate_zig_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Zig tool."""
+    if not re.search(r'fn\s+\w+', code):
+        result["errors"].append("No function definition found in Zig code")
+    # Try zig ast-check if available
+    with tempfile.NamedTemporaryFile(suffix='.zig', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['zig', 'ast-check', f.name],
+                capture_output=True, text=True, timeout=10
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Zig syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("Zig not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Zig syntax check timed out")
+        finally:
+            os.unlink(f.name)
+
+
+def _validate_java_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Java tool."""
+    if not re.search(r'(?:public|private|protected)\s+.*\s+\w+\s*\(', code) and not re.search(r'class\s+\w+', code):
+        result["errors"].append("No method or class definition found in Java code")
+    # Try javac syntax check if available
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Attempt to extract class name for proper file naming
+        class_match = re.search(r'public\s+class\s+(\w+)', code)
+        filename = (class_match.group(1) + ".java") if class_match else "Tool.java"
+        filepath = os.path.join(tmpdir, filename)
+        with open(filepath, 'w') as f:
+            f.write(code)
+        try:
+            proc = subprocess.run(
+                ['javac', '-d', tmpdir, filepath],
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Java syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("javac not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Java syntax check timed out")
+
+
+def _validate_ruby_tool(code: str, result: Dict[str, Any]) -> None:
+    """Validate a Ruby tool."""
+    if not re.search(r'def\s+\w+', code):
+        result["errors"].append("No method definition found in Ruby code")
+    # Try ruby -c syntax check if available
+    with tempfile.NamedTemporaryFile(suffix='.rb', mode='w', delete=False) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = subprocess.run(
+                ['ruby', '-c', f.name],
+                capture_output=True, text=True, timeout=10
+            )
+            if proc.returncode != 0:
+                result["errors"].append(f"Ruby syntax error: {proc.stderr.strip()}")
+        except FileNotFoundError:
+            result["warnings"].append("Ruby not available for syntax checking")
+        except subprocess.TimeoutExpired:
+            result["warnings"].append("Ruby syntax check timed out")
+        finally:
+            os.unlink(f.name)
 
 
 def dry_run_injection(

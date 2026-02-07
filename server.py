@@ -111,7 +111,7 @@ def inject_tool_capability(
     HOT-PATCHING: Inject a new tool capability into an MCP server (supports multiple languages).
     
     This tool automatically detects the server's language and routes to the appropriate
-    injection function. Supports Python, JavaScript, Rust, C, C++, Go, and TypeScript.
+    injection function. Supports Python, JavaScript, Rust, C, C++, Go, TypeScript, Zig, Java, and Ruby.
     
     It:
     1. Detects the file type and language
@@ -277,7 +277,7 @@ def compile_server(
     force: bool = False
 ) -> Dict[str, Any]:
     """
-    Compile a server that requires compilation (Rust, C, C++, Go, TypeScript).
+    Compile a server that requires compilation (Rust, C, C++, Go, TypeScript, Zig, Java).
     
     This tool:
     1. Detects the build system (Cargo, Make, CMake, Go, npm/tsc, etc.)
@@ -407,7 +407,9 @@ def compile_server(
                 'go': 'Install Go: https://go.dev/dl/',
                 'typescript': 'Install Node.js and TypeScript: npm install -g typescript',
                 'meson': 'Install Meson: pip install meson',
-                'zig': 'Install Zig: https://ziglang.org/download/'
+                'zig': 'Install Zig: https://ziglang.org/download/',
+                'maven': 'Install Maven: https://maven.apache.org/install.html',
+                'gradle': 'Install Gradle: https://gradle.org/install/',
             }
             suggestion = suggestions.get(build_type, f"Install {command[0]}")
             

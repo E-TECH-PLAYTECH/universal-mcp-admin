@@ -76,7 +76,7 @@ def find_server_source_file(server_name: str) -> Path:
     source_file = None
     
     # Extended file extensions for all supported languages
-    source_extensions = ('.py', '.js', '.rs', '.c', '.cpp', '.cc', '.cxx', '.go', '.ts')
+    source_extensions = ('.py', '.js', '.rs', '.c', '.cpp', '.cc', '.cxx', '.go', '.ts', '.zig', '.java', '.rb')
     
     if command == "python" or command == "python3":
         # Look for .py file in args
@@ -118,6 +118,24 @@ def find_server_source_file(server_name: str) -> Path:
         # Look for .ts file in args
         for arg in args:
             if arg.endswith(".ts"):
+                source_file = arg
+                break
+    elif command == "zig":
+        # Look for .zig file in args
+        for arg in args:
+            if arg.endswith(".zig"):
+                source_file = arg
+                break
+    elif command in ("java", "javac", "mvn", "gradle"):
+        # Look for .java file in args
+        for arg in args:
+            if arg.endswith(".java"):
+                source_file = arg
+                break
+    elif command == "ruby":
+        # Look for .rb file in args
+        for arg in args:
+            if arg.endswith(".rb"):
                 source_file = arg
                 break
     elif command == "uvx" or command == "npx":
@@ -1060,6 +1078,350 @@ def inject_tool_into_typescript_file(
 
 
 # ============================================================================
+# Zig Language Handlers
+# ============================================================================
+
+def validate_zig_code(code: str) -> Tuple[bool, str]:
+    """
+    Validate Zig code using zig ast-check.
+    
+    Args:
+        code: Zig code to validate
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.zig', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        
+        try:
+            process = subprocess.run(
+                ["zig", "ast-check", temp_path],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            os.unlink(temp_path)
+            
+            if process.returncode == 0:
+                return True, ""
+            else:
+                error_msg = process.stderr.strip() or process.stdout.strip()
+                return False, f"Zig syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "zig not found. Install Zig (https://ziglang.org/download/) to validate Zig code."
+    except subprocess.TimeoutExpired:
+        return False, "Zig validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Zig: {str(e)}"
+
+
+def check_tool_exists_zig(source_code: str, tool_name: str) -> bool:
+    """
+    Check if a tool with the given name already exists in Zig source code.
+    
+    Args:
+        source_code: Zig source code to check
+        tool_name: Name of the tool to look for
+        
+    Returns:
+        True if tool exists, False otherwise
+    """
+    patterns = [
+        rf'pub\s+fn\s+{re.escape(tool_name)}\s*\(',  # pub fn tool_name(
+        rf'fn\s+{re.escape(tool_name)}\s*\(',  # fn tool_name(
+        rf'const\s+{re.escape(tool_name)}\s*=',  # const tool_name =
+        rf'var\s+{re.escape(tool_name)}\s*=',  # var tool_name =
+    ]
+    
+    for pattern in patterns:
+        if re.search(pattern, source_code):
+            return True
+    
+    return False
+
+
+def inject_tool_into_zig_file(
+    server_name: str,
+    tool_name: str,
+    tool_code: str
+) -> Tuple[bool, str]:
+    """
+    Inject a new tool capability into a Zig MCP server.
+    
+    Args:
+        server_name: Name of the server to modify
+        tool_name: Name of the tool to inject
+        tool_code: Zig code for the tool
+        
+    Returns:
+        Tuple of (success, message)
+    """
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        
+        if check_tool_exists_zig(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        
+        is_valid, error_msg = validate_zig_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Zig code: {error_msg}"
+        
+        combined_code = source_code + "\n\n" + tool_code
+        is_valid, error_msg = validate_zig_code(combined_code)
+        if not is_valid:
+            return False, f"Adding tool would break file syntax: {error_msg}"
+        
+        backup_path = create_backup(source_path)
+        
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"// Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+        
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Java Language Handlers
+# ============================================================================
+
+def validate_java_code(code: str) -> Tuple[bool, str]:
+    """
+    Validate Java code using javac syntax checking.
+    
+    Args:
+        code: Java code to validate
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            # Attempt to extract public class name for file naming
+            class_match = re.search(r'public\s+class\s+(\w+)', code)
+            filename = (class_match.group(1) + ".java") if class_match else "Tool.java"
+            test_file = tmp_path / filename
+            test_file.write_text(code, encoding='utf-8')
+            
+            process = subprocess.run(
+                ["javac", "-d", str(tmp_path), str(test_file)],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                cwd=tmpdir
+            )
+            
+            if process.returncode == 0:
+                return True, ""
+            else:
+                error_msg = process.stderr.strip() or process.stdout.strip()
+                return False, f"Java syntax error: {error_msg}"
+    except FileNotFoundError:
+        return False, "javac not found. Install a JDK to validate Java code."
+    except subprocess.TimeoutExpired:
+        return False, "Java validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Java: {str(e)}"
+
+
+def check_tool_exists_java(source_code: str, tool_name: str) -> bool:
+    """
+    Check if a tool with the given name already exists in Java source code.
+    
+    Args:
+        source_code: Java source code to check
+        tool_name: Name of the tool to look for
+        
+    Returns:
+        True if tool exists, False otherwise
+    """
+    patterns = [
+        rf'(?:public|private|protected)\s+.*\s+{re.escape(tool_name)}\s*\(',  # public Type tool_name(
+        rf'static\s+.*\s+{re.escape(tool_name)}\s*\(',  # static Type tool_name(
+        rf'class\s+{re.escape(tool_name)}\s',  # class tool_name
+        rf'interface\s+{re.escape(tool_name)}\s',  # interface tool_name
+    ]
+    
+    for pattern in patterns:
+        if re.search(pattern, source_code):
+            return True
+    
+    return False
+
+
+def inject_tool_into_java_file(
+    server_name: str,
+    tool_name: str,
+    tool_code: str
+) -> Tuple[bool, str]:
+    """
+    Inject a new tool capability into a Java MCP server.
+    
+    Args:
+        server_name: Name of the server to modify
+        tool_name: Name of the tool to inject
+        tool_code: Java code for the tool
+        
+    Returns:
+        Tuple of (success, message)
+    """
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        
+        if check_tool_exists_java(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        
+        is_valid, error_msg = validate_java_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Java code: {error_msg}"
+        
+        combined_code = source_code + "\n\n" + tool_code
+        is_valid, error_msg = validate_java_code(combined_code)
+        if not is_valid:
+            return False, f"Adding tool would break file syntax: {error_msg}"
+        
+        backup_path = create_backup(source_path)
+        
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"// Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}. Note: Compilation required."
+        
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
+# Ruby Language Handlers
+# ============================================================================
+
+def validate_ruby_code(code: str) -> Tuple[bool, str]:
+    """
+    Validate Ruby code using ruby -c syntax checking.
+    
+    Args:
+        code: Ruby code to validate
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.rb', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            temp_path = f.name
+        
+        try:
+            process = subprocess.run(
+                ["ruby", "-c", temp_path],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            os.unlink(temp_path)
+            
+            if process.returncode == 0:
+                return True, ""
+            else:
+                error_msg = process.stderr.strip() or process.stdout.strip()
+                return False, f"Ruby syntax error: {error_msg}"
+        except Exception:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+    except FileNotFoundError:
+        return False, "ruby not found. Install Ruby to validate Ruby code."
+    except subprocess.TimeoutExpired:
+        return False, "Ruby validation timed out"
+    except Exception as e:
+        return False, f"Failed to validate Ruby: {str(e)}"
+
+
+def check_tool_exists_ruby(source_code: str, tool_name: str) -> bool:
+    """
+    Check if a tool with the given name already exists in Ruby source code.
+    
+    Args:
+        source_code: Ruby source code to check
+        tool_name: Name of the tool to look for
+        
+    Returns:
+        True if tool exists, False otherwise
+    """
+    patterns = [
+        rf'def\s+{re.escape(tool_name)}\s*[\((\n]',  # def tool_name( or def tool_name\n
+        rf'def\s+self\.{re.escape(tool_name)}\s*[\((\n]',  # def self.tool_name(
+        rf'class\s+{re.escape(tool_name)}\s',  # class tool_name
+        rf'module\s+{re.escape(tool_name)}\s',  # module tool_name
+    ]
+    
+    for pattern in patterns:
+        if re.search(pattern, source_code):
+            return True
+    
+    return False
+
+
+def inject_tool_into_ruby_file(
+    server_name: str,
+    tool_name: str,
+    tool_code: str
+) -> Tuple[bool, str]:
+    """
+    Inject a new tool capability into a Ruby MCP server.
+    
+    Args:
+        server_name: Name of the server to modify
+        tool_name: Name of the tool to inject
+        tool_code: Ruby code for the tool
+        
+    Returns:
+        Tuple of (success, message)
+    """
+    try:
+        source_code, source_path = read_source_file(server_name, max_chars=100000)
+        
+        if check_tool_exists_ruby(source_code, tool_name):
+            return False, f"Tool '{tool_name}' already exists in {source_path}"
+        
+        is_valid, error_msg = validate_ruby_code(tool_code)
+        if not is_valid:
+            return False, f"Invalid Ruby code: {error_msg}"
+        
+        combined_code = source_code + "\n\n" + tool_code
+        is_valid, error_msg = validate_ruby_code(combined_code)
+        if not is_valid:
+            return False, f"Adding tool would break file syntax: {error_msg}"
+        
+        backup_path = create_backup(source_path)
+        
+        with open(source_path, "a", encoding="utf-8") as f:
+            f.write("\n\n")
+            f.write(f"# Tool injected by universal-mcp-admin\n")
+            f.write(tool_code)
+            f.write("\n")
+        
+        return True, f"Tool '{tool_name}' injected successfully. Backup created at {backup_path}"
+        
+    except Exception as e:
+        return False, f"Failed to inject tool: {str(e)}"
+
+
+# ============================================================================
 # Language Registry and Generic Dispatcher
 # ============================================================================
 
@@ -1127,6 +1489,27 @@ LANGUAGE_HANDLERS: Dict[str, Dict[str, Any]] = {
         'inject': inject_tool_into_typescript_file,
         'needs_compilation': True,
         'comment_prefix': '//'
+    },
+    '.zig': {
+        'validate': validate_zig_code,
+        'check_tool_exists': check_tool_exists_zig,
+        'inject': inject_tool_into_zig_file,
+        'needs_compilation': True,
+        'comment_prefix': '//'
+    },
+    '.java': {
+        'validate': validate_java_code,
+        'check_tool_exists': check_tool_exists_java,
+        'inject': inject_tool_into_java_file,
+        'needs_compilation': True,
+        'comment_prefix': '//'
+    },
+    '.rb': {
+        'validate': validate_ruby_code,
+        'check_tool_exists': check_tool_exists_ruby,
+        'inject': inject_tool_into_ruby_file,
+        'needs_compilation': False,
+        'comment_prefix': '#'
     }
 }
 
@@ -1221,6 +1604,12 @@ def find_tool_in_source(
         return _find_brace_tool(lines, tool_name, r'(?:\w+\s+)+' + re.escape(tool_name) + r'\s*\(')
     elif language == '.go':
         return _find_brace_tool(lines, tool_name, r'func\s+(?:\([^)]*\)\s+)?' + re.escape(tool_name) + r'\s*\(')
+    elif language == '.zig':
+        return _find_brace_tool(lines, tool_name, r'(?:pub\s+)?fn\s+' + re.escape(tool_name) + r'\s*\(')
+    elif language == '.java':
+        return _find_brace_tool(lines, tool_name, r'(?:(?:public|private|protected)\s+)?(?:static\s+)?(?:\w+\s+)' + re.escape(tool_name) + r'\s*\(')
+    elif language == '.rb':
+        return _find_ruby_tool(lines, tool_name)
     return None
 
 
@@ -1289,6 +1678,32 @@ def _find_brace_tool(lines: list, tool_name: str, pattern_str: str) -> Optional[
                 else:
                     break
             end = _find_brace_end(lines, i)
+            return start, end, '\n'.join(lines[start:end])
+    return None
+
+
+def _find_ruby_tool(lines: list, tool_name: str) -> Optional[Tuple[int, int, str]]:
+    """Find a Ruby method definition (uses def/end blocks)."""
+    func_pattern = re.compile(rf'def\s+(?:self\.)?{re.escape(tool_name)}\s*[\((\n]')
+    for i, line in enumerate(lines):
+        if func_pattern.search(line):
+            start = i
+            # Walk backwards for preceding comments
+            while start > 0 and lines[start - 1].strip().startswith('#'):
+                start -= 1
+
+            # Walk forward to find matching 'end'
+            indent = len(line) - len(line.lstrip())
+            end = i + 1
+            while end < len(lines):
+                l = lines[end]
+                stripped = l.strip()
+                if stripped == 'end':
+                    current_indent = len(l) - len(l.lstrip())
+                    if current_indent <= indent:
+                        end += 1  # Include the 'end' line
+                        break
+                end += 1
             return start, end, '\n'.join(lines[start:end])
     return None
 

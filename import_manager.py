@@ -70,6 +70,30 @@ def extract_imports_c(code: str) -> List[str]:
     return imports
 
 
+def extract_imports_zig(code: str) -> List[str]:
+    """Extract @import statements from Zig code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(const\s+\w+\s*=\s*@import\(.+\)\s*;)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_java(code: str) -> List[str]:
+    """Extract import statements from Java code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(import\s+(?:static\s+)?.+);', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
+def extract_imports_ruby(code: str) -> List[str]:
+    """Extract require/require_relative statements from Ruby code."""
+    imports: List[str] = []
+    for m in re.finditer(r'^(require(?:_relative)?\s+.+)', code, re.MULTILINE):
+        imports.append(m.group(0).strip())
+    return imports
+
+
 _EXTRACTORS = {
     '.py': extract_imports_python,
     '.js': extract_imports_javascript,
@@ -80,6 +104,9 @@ _EXTRACTORS = {
     '.cpp': extract_imports_c,
     '.cc': extract_imports_c,
     '.cxx': extract_imports_c,
+    '.zig': extract_imports_zig,
+    '.java': extract_imports_java,
+    '.rb': extract_imports_ruby,
 }
 
 
@@ -158,6 +185,26 @@ def inject_imports(
         for i, line in enumerate(lines):
             if line.strip().startswith("import"):
                 pos = i + 1
+    elif language == '.zig':
+        # Insert after last @import line
+        pos = 0
+        for i, line in enumerate(lines):
+            if '@import(' in line:
+                pos = i + 1
+    elif language == '.java':
+        # Insert after last import statement (before class declaration)
+        pos = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("import "):
+                pos = i + 1
+    elif language == '.rb':
+        # Insert after last require/require_relative
+        pos = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("require ") or stripped.startswith("require_relative "):
+                pos = i + 1
     else:
         pos = 0
 
@@ -211,5 +258,33 @@ def detect_dependencies(project_path: str, language: str) -> List[Dict[str, str]
                 if line and not line.startswith("module") and not line.startswith("go ") and not line.startswith("//"):
                     if not line.startswith(("require", ")", "(")):
                         deps.append({"name": line.split()[0] if line.split() else line, "source": "go.mod"})
+
+    elif language == '.zig':
+        zon = pp / "build.zig.zon"
+        if zon.exists():
+            deps.append({"name": "(see build.zig.zon)", "source": "build.zig.zon"})
+        build_zig = pp / "build.zig"
+        if build_zig.exists():
+            deps.append({"name": "(see build.zig)", "source": "build.zig"})
+
+    elif language == '.java':
+        pom = pp / "pom.xml"
+        if pom.exists():
+            deps.append({"name": "(see pom.xml)", "source": "pom.xml"})
+        for gradle_file in ("build.gradle", "build.gradle.kts"):
+            gradle = pp / gradle_file
+            if gradle.exists():
+                deps.append({"name": f"(see {gradle_file})", "source": gradle_file})
+
+    elif language == '.rb':
+        gemfile = pp / "Gemfile"
+        if gemfile.exists():
+            for line in gemfile.read_text(encoding='utf-8').splitlines():
+                line = line.strip()
+                if line.startswith("gem "):
+                    # Extract gem name from: gem 'name' or gem "name"
+                    gem_match = re.match(r'gem\s+["\']([^"\']+)["\']', line)
+                    if gem_match:
+                        deps.append({"name": gem_match.group(1), "source": "Gemfile"})
 
     return deps

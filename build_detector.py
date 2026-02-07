@@ -97,6 +97,22 @@ def detect_build_system(project_path: Path) -> Dict[str, Any]:
         except (json.JSONDecodeError, Exception):
             pass
     
+    # Check for pom.xml (Java / Maven)
+    if (project_path / "pom.xml").exists():
+        build_info['type'] = 'maven'
+        build_info['command'] = 'mvn'
+        build_info['args'] = ['compile']
+        build_info['needs_compilation'] = True
+        return build_info
+    
+    # Check for build.gradle or build.gradle.kts (Java / Gradle)
+    if (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists():
+        build_info['type'] = 'gradle'
+        build_info['command'] = 'gradle'
+        build_info['args'] = ['build']
+        build_info['needs_compilation'] = True
+        return build_info
+    
     # Check for meson.build (Meson build system)
     if (project_path / "meson.build").exists():
         build_info['type'] = 'meson'
@@ -141,6 +157,11 @@ def get_project_path_from_source_file(source_file_path: Path) -> Path:
         'CMakeLists.txt',  # CMake
         'meson.build',     # Meson
         'build.zig',       # Zig
+        'build.zig.zon',   # Zig (package manifest)
+        'pom.xml',         # Java (Maven)
+        'build.gradle',    # Java (Gradle)
+        'build.gradle.kts',# Java (Gradle Kotlin DSL)
+        'Gemfile',         # Ruby (Bundler)
         '.git',            # Git repo root
     ]
     

@@ -154,6 +154,71 @@ def _extract_c_tools(source_code: str) -> List[Dict[str, Any]]:
     return tools
 
 
+def _extract_zig_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract function definitions from Zig source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'(?:pub\s+)?fn\s+(\w+)\s*\(([^)]*)\)(?:\s*(\w+))?\s*\{', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split(':')[0].strip()} for p in m.group(2).split(',') if p.strip()]
+        tools.append({
+            "name": name,
+            "parameters": params,
+            "return_type": m.group(3) or "",
+            "docstring": "",
+            "line_start": line,
+            "line_end": line,
+        })
+    return tools
+
+
+def _extract_java_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract method definitions from Java source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(
+        r'(?:(?:public|private|protected)\s+)?(?:static\s+)?(?:(?:final|abstract|synchronized)\s+)?(\w+)\s+(\w+)\s*\(([^)]*)\)\s*(?:throws\s+[\w,\s]+)?\s*\{',
+        source_code
+    ):
+        return_type = m.group(1)
+        name = m.group(2)
+        # Skip control-flow keywords and class/interface declarations
+        if name in ('if', 'for', 'while', 'switch', 'return', 'catch', 'class', 'interface', 'new'):
+            continue
+        if return_type in ('class', 'interface', 'enum', 'new', 'return'):
+            continue
+        line = source_code[:m.start()].count('\n') + 1
+        params = [{"name": p.strip().split()[-1] if p.strip().split() else ""} for p in m.group(3).split(',') if p.strip()]
+        tools.append({
+            "name": name,
+            "parameters": params,
+            "return_type": return_type,
+            "docstring": "",
+            "line_start": line,
+            "line_end": line,
+        })
+    return tools
+
+
+def _extract_ruby_tools(source_code: str) -> List[Dict[str, Any]]:
+    """Extract method definitions from Ruby source."""
+    tools: List[Dict[str, Any]] = []
+    for m in re.finditer(r'def\s+(?:self\.)?(\w+[?!=]?)\s*(?:\(([^)]*)\))?', source_code):
+        name = m.group(1)
+        line = source_code[:m.start()].count('\n') + 1
+        params = []
+        if m.group(2):
+            params = [{"name": p.strip().lstrip('*&')} for p in m.group(2).split(',') if p.strip()]
+        tools.append({
+            "name": name,
+            "parameters": params,
+            "return_type": "",
+            "docstring": "",
+            "line_start": line,
+            "line_end": line,
+        })
+    return tools
+
+
 _TOOL_EXTRACTORS = {
     '.py': _extract_python_tools,
     '.js': _extract_js_tools,
@@ -164,6 +229,9 @@ _TOOL_EXTRACTORS = {
     '.cpp': _extract_c_tools,
     '.cc': _extract_c_tools,
     '.cxx': _extract_c_tools,
+    '.zig': _extract_zig_tools,
+    '.java': _extract_java_tools,
+    '.rb': _extract_ruby_tools,
 }
 
 

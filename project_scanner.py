@@ -18,6 +18,9 @@ SOURCE_EXTENSIONS = {
     'go': ['.go'],
     'c': ['.c', '.h'],
     'cpp': ['.cpp', '.cc', '.cxx', '.hpp', '.h'],
+    'zig': ['.zig'],
+    'java': ['.java'],
+    'ruby': ['.rb'],
 }
 
 ALL_EXTENSIONS = set()
@@ -58,7 +61,9 @@ def detect_project_structure(project_path: str) -> Dict[str, Any]:
             # Build files
             if f in ('Makefile', 'CMakeLists.txt', 'Cargo.toml', 'go.mod',
                       'package.json', 'pyproject.toml', 'setup.py',
-                      'meson.build', 'build.zig'):
+                      'meson.build', 'build.zig', 'build.zig.zon',
+                      'pom.xml', 'build.gradle', 'build.gradle.kts',
+                      'Gemfile'):
                 structure["build_files"].append(str(fp.relative_to(pp)))
 
         # Detect modules (directories with __init__.py or index.*)
@@ -84,6 +89,12 @@ def _detect_language(project_path: Path) -> str:
         return "go"
     if (project_path / "pyproject.toml").exists() or (project_path / "setup.py").exists():
         return "python"
+    if (project_path / "build.zig").exists():
+        return "zig"
+    if (project_path / "pom.xml").exists() or (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists():
+        return "java"
+    if (project_path / "Gemfile").exists():
+        return "ruby"
     if (project_path / "package.json").exists():
         pkg_json = project_path / "package.json"
         try:
@@ -121,6 +132,9 @@ def _detect_entry_point(project_path: Path, language: str) -> Optional[str]:
         'go': ['main.go', 'cmd/main.go'],
         'c': ['main.c', 'src/main.c'],
         'cpp': ['main.cpp', 'src/main.cpp', 'main.cc'],
+        'zig': ['src/main.zig', 'main.zig'],
+        'java': ['src/main/java/Main.java', 'Main.java', 'App.java', 'src/Main.java'],
+        'ruby': ['server.rb', 'main.rb', 'app.rb'],
     }
     for candidate in candidates.get(language, []):
         if (project_path / candidate).exists():
