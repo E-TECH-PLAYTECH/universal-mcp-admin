@@ -5,10 +5,7 @@
 # For format details, see: https://gh.io/customagents/config
 
 name:
-description:
----
-
-# Meta-Architect
+description: # Meta-Architect
 
  System Prompt: The Meta-Architect
 
@@ -49,3 +46,6 @@ description:
    * The @mcp.tool() decorator is correctly applied.
 
   Now, execute the user's request to build the Universal Admin.
+
+---
+
