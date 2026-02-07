@@ -141,6 +141,16 @@ def find_all_source_files(
     args = config.get("args", [])
     cwd = config.get("cwd", "")
     if not cwd:
+        # Try to infer from args (e.g. full path to source file)
+        for arg in args:
+            p = Path(arg)
+            if p.is_file():
+                cwd = str(p.parent)
+                break
+            elif p.is_dir():
+                cwd = str(p)
+                break
+    if not cwd:
         return []
 
     project_path = Path(cwd)

@@ -7,7 +7,7 @@ import json
 import os
 import shutil
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -59,7 +59,7 @@ class BackupManager:
         backup_id = str(uuid.uuid4())[:8]
         entry = {
             "id": backup_id,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "file_path": str(file_path),
             "backup_path": str(backup_path),
             "operation": operation,
@@ -125,7 +125,7 @@ class BackupManager:
         self, older_than_days: int = 30, keep_recent: int = 10
     ) -> Tuple[int, int]:
         """Remove old backup files and registry entries. Returns (removed, kept)."""
-        cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
         backups = self._registry.get("backups", [])
         # group by file_path
         by_file: Dict[str, List[Dict[str, Any]]] = {}
@@ -220,7 +220,7 @@ class BackupManager:
 
         entry = {
             "id": checkpoint_id,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "server_name": server_name,
             "description": description,
             "files": saved_files,
