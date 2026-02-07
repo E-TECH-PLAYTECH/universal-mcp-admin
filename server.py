@@ -417,7 +417,7 @@ def compile_server(
             if error_history:
                 # Look for common error patterns
                 recent_errors = error_history[-3:]  # Last 3 errors
-                common_errors = [e.get('error', '')[:100] for e in recent_errors]
+                common_errors = [err.get('error', '')[:100] for err in recent_errors]
             
             return {
                 "success": False,

@@ -1091,7 +1091,7 @@ LANGUAGE_HANDLERS: Dict[str, Dict[str, Any]] = {
         'check_tool_exists': check_tool_exists_c,
         'inject': inject_tool_into_c_file,
         'needs_compilation': True,
-        'comment_prefix': '//'
+        'comment_prefix': '/*'
     },
     '.cpp': {
         'validate': validate_cpp_code,
